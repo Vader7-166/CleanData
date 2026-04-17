@@ -19,3 +19,11 @@
 
 - [x] 4.1 Thêm pipeline config file (Ví dụ: GitHub Actions `.yml`) để tự động build Docker
 - [x] 4.2 Thử nghiệm End-to-end trên môi trường local Docker Compose
+
+## 5. Option B - Architecture Pivot
+
+- [x] 5.1 Cập nhật `frontend/style.css` để thêm Responsive layout cho module đăng nhập
+- [x] 5.2 Tạo các `SQLAlchemy` model (User, ProcessingHistory) vào `backend/models.py` và setup database (`database.py`)
+- [x] 5.3 Thay thế cơ chế Basic Auth cứng bằng logic query qua User DB (`backend/main.py`)
+- [x] 5.4 Ghi log file xử lý vào bảng `ProcessingHistory` trong quá trình Inference
+- [x] 5.5 Kiểm thử End-to-end cho luồng xác thực Database và UI Responsive

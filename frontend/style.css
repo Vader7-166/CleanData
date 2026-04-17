@@ -239,3 +239,19 @@ button {
     border-radius: 8px;
     font-weight: 600;
 }
+
+@media (max-width: 480px) {
+    .glass-container {
+        padding: 2rem 1.5rem;
+        margin: 1rem;
+    }
+    
+    .auth-section {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    header h1 {
+        font-size: 2rem;
+    }
+}

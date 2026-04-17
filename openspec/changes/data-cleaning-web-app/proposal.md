@@ -15,6 +15,7 @@ Hiện tại, logic làm sạch dữ liệu dựa trên mô hình NLP (TF-IDF + 
 - `data-cleaning-api`: Backend API nhận file, làm sạch dữ liệu và trả về kết quả.
 - `web-ui`: Giao diện ứng dụng người dùng chạy trên trình duyệt.
 - `security-deployment`: Khả năng bảo mật (Auth/Rate-limit) và quy trình CI/CD/Dockerization.
+- `database-logging`: Quản lý tài khoản người dùng và lưu trữ lịch sử xử lý file thông qua SQLite DB.
 
 ### Modified Capabilities
 

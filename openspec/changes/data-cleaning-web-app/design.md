@@ -16,8 +16,8 @@ Do hạn chế về mặt tài nguyên trên máy cục bộ của người dùn
 ## Decisions
 
 - **Backend**: FastAPI - Nhanh, hỗ trợ async khi xử lý I/O hoặc file tải lên tải xuống, dễ deploy pipeline ML.
-- **Frontend**: Nhanh nhất có thể xài React/Vite.
-- **Security**: JWT Auth hoặc Basic Auth cho API nội bộ.
+- **Frontend**: Nhanh nhất có thể xài React/Vite hoặc Vanilla HTML/CSS/JS (cần hỗ trợ Responsive UI).
+- **Security & Database (Option B)**: Tích hợp SQLAlchemy + SQLite để lưu trữ `User` (chứng thực bảo mật bằng bcrypt) và bảng `ProcessingHistory` để log lại các giao dịch xử lý file. 
 - **Deployment & CI/CD**: Docker Compose cho cả Web và API container. CI/CD qua GitHub Actions (hoặc Gitlab CI) để build image tự động mỗi khi merge code.
 
 ## Risks / Trade-offs
