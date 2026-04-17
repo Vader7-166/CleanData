@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Data Cleaner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-animation"></div>
+    <div class="glass-container">
+        <header>
+            <h1>Data Cleaner <span>Pro</span></h1>
+            <p>Sanitize and predict missing data columns effortlessly.</p>
+        </header>
+
+        <main>
+            <div class="auth-section" id="authSection">
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+            </div>
+
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <p>Drag and drop your Excel or CSV file here</p>
+                <p class="or-text">or</p>
+                <label for="fileInput" class="custom-file-upload">Browse File</label>
+                <input type="file" id="fileInput" accept=".csv, .xlsx, .xls">
+                <p id="fileName" class="file-name"></p>
+            </div>
+
+            <button id="processBtn" class="primary-btn" disabled>Clean Data</button>
+
+            <div id="loader" class="loader hidden">
+                <div class="spinner"></div>
+                <p>Processing data using PhoBert Model...</p>
+            </div>
+
+            <div id="resultArea" class="result-area hidden">
+                <h3>Success!</h3>
+                <p>Your dataset has been successfully processed.</p>
+                <a id="downloadLink" class="download-btn">Download Cleaned File</a>
+                <button id="resetBtn" class="secondary-btn">Process Another</button>
+            </div>
+
+            <div id="errorArea" class="error-area hidden">
+                <p id="errorMsg"></p>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
