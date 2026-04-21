@@ -40,3 +40,4 @@ cleaned_*
 # Agent Artifacts
 .agent/
 scratch/
+.gemini/

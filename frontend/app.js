@@ -9,9 +9,6 @@ const resetBtn = document.getElementById('resetBtn');
 const errorArea = document.getElementById('errorArea');
 const errorMsg = document.getElementById('errorMsg');
 
-const usernameInput = document.getElementById('username');
-const passwordInput = document.getElementById('password');
-
 let selectedFile = null;
 
 // Drag and drop setup
@@ -68,33 +65,20 @@ function hideError() {
 processBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
     
-    const user = usernameInput.value;
-    const pass = passwordInput.value;
-    
-    if(!user || !pass) {
-        showError("Please provide Username and Password.");
-        return;
-    }
-
     hideError();
     processBtn.disabled = true;
     processBtn.classList.add('hidden');
     uploadArea.classList.add('hidden');
     loader.classList.remove('hidden');
-    document.getElementById('authSection').classList.add('hidden');
-
+    
     const formData = new FormData();
     formData.append('file', selectedFile);
-
-    const headers = new Headers();
-    headers.append('Authorization', 'Basic ' + btoa(user + ':' + pass));
 
     try {
         // Change URL if deployed elsewhere
         const response = await fetch('http://localhost:8000/upload', {
             method: 'POST',
-            body: formData,
-            headers: headers
+            body: formData
         });
 
         if (!response.ok) {
@@ -116,7 +100,6 @@ processBtn.addEventListener('click', async () => {
         loader.classList.add('hidden');
         processBtn.classList.remove('hidden');
         uploadArea.classList.remove('hidden');
-        document.getElementById('authSection').classList.remove('hidden');
         processBtn.disabled = false;
         showError(err.message);
     }
@@ -129,6 +112,5 @@ resetBtn.addEventListener('click', () => {
     resultArea.classList.add('hidden');
     uploadArea.classList.remove('hidden');
     processBtn.classList.remove('hidden');
-    document.getElementById('authSection').classList.remove('hidden');
     processBtn.disabled = true;
 });

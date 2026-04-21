@@ -2,12 +2,21 @@ import re
 import pickle
 import pandas as pd
 import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import RobertaTokenizer, AutoModelForSequenceClassification
 
 class DataCleaner:
     def __init__(self, model_path):
         self.model_path = model_path
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        # Ép dùng RobertaTokenizer (bản slow) để bỏ qua hoàn toàn lỗi backend Fast
+        print(f"Loading Tokenizer from {model_path} (use_fast=False)...")
+        try:
+            self.tokenizer = RobertaTokenizer.from_pretrained(model_path, use_fast=False)
+        except Exception as e:
+            print(f"RobertaTokenizer failed, falling back to AutoTokenizer: {e}")
+            from transformers import AutoTokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+        
+        print("Loading Model...")
         self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
         with open(f"{model_path}/label_encoder.pkl", "rb") as f:
             self.label_encoder = pickle.load(f)
@@ -71,6 +80,6 @@ cleaner = None
 def get_cleaner():
     global cleaner
     if cleaner is None:
-        model_path = os.environ.get("MODEL_PATH", "D:/Code/CleanData/working")
+        model_path = os.environ.get("MODEL_PATH", "/working")
         cleaner = DataCleaner(model_path)
     return cleaner
