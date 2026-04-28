@@ -9,6 +9,7 @@ services:
     volumes:
       - ./working:/working
       - ./backend:/app/backend
+      - ./dataset:/app/dataset
     environment:
       - MODEL_PATH=/working
     # Cài đặt nóng các thư viện missing và khởi động server (Bypass rebuild cực nhanh)

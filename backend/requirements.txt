@@ -10,3 +10,4 @@ protobuf
 sentencepiece
 tiktoken
 scikit-learn
+sse-starlette

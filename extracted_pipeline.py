@@ -463,6 +463,26 @@ df['Lớp 2'] = temp_cols[3]
 df = df.drop(columns=['input_for_ai', 'Ket_Qua_Gop'])
 df = df.drop(columns=['Năm', 'Hãng (Trích xuất)'], errors='ignore')
 
+# Đọc header từ sample.csv
+try:
+    sample_df = pd.read_csv('dataset/sample.csv', nrows=0)
+    expected_cols = sample_df.columns.tolist()
+except Exception:
+    expected_cols = ['Ngày', 'Mã HS', 'Công ty NK', 'Tên hàng', 'DVT', 'Lượng', 'Giá trị', 'Đơn giá', 'Hãng', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Công suất', 'Quốc gia', 'Châu lục', 'MDSD', 'Công ty XK', 'Incoterms', 'Method_of_Payment', 'Công suất.1', 'Loại 1', 'Loại 2', 'Năm']
+
+# Giữ lại metadata trước khi reindex
+trang_thai = df['Trạng Thái'] if 'Trạng Thái' in df.columns else None
+do_tu_tin = df['Độ Tự Tin (%)'] if 'Độ Tự Tin (%)' in df.columns else None
+
+# Reindex theo order của sample.csv
+df = df.reindex(columns=expected_cols)
+
+# Gắn lại metadata ở cuối với tên cột chuẩn
+if trang_thai is not None:
+    df['Trạng thái'] = trang_thai
+if do_tu_tin is not None:
+    df['Độ tự tin'] = do_tu_tin
+
 # Xuất kết quả
 df.to_csv(OUTPUT_FILE, index=False, encoding='utf-8-sig')
 print(f"Hoàn tất! File kết quả phân loại Hybrid đã được lưu tại: {OUTPUT_FILE}")

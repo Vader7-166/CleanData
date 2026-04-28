@@ -11,7 +11,7 @@
 
 <body>
     <div class="background-animation"></div>
-    <div class="glass-container">
+    <div class="glass-container" id="mainContainer">
         <header>
             <h1>Data Cleaner <span>Pro</span></h1>
             <p>Sanitize and predict missing data columns effortlessly.</p>
@@ -31,12 +31,26 @@
 
             <div id="loader" class="loader hidden">
                 <div class="spinner"></div>
-                <p>Processing data using PhoBert Model...</p>
+                <p>Processing data using Hybrid Model...</p>
+                
+                <!-- SSE Progress Log -->
+                <div id="progressLog" class="progress-log">
+                    <ul id="logList"></ul>
+                </div>
             </div>
 
             <div id="resultArea" class="result-area hidden">
                 <h3>Success!</h3>
                 <p>Your dataset has been successfully processed.</p>
+                
+                <!-- Table Preview -->
+                <div class="table-container">
+                    <table id="previewTable">
+                        <thead id="previewThead"></thead>
+                        <tbody id="previewTbody"></tbody>
+                    </table>
+                </div>
+
                 <a id="downloadLink" class="download-btn">Download Cleaned File</a>
                 <button id="resetBtn" class="secondary-btn">Process Another</button>
             </div>
