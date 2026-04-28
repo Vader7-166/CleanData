@@ -11,11 +11,44 @@
 
 <body>
     <div class="background-animation"></div>
-    <div class="glass-container" id="mainContainer">
+    <div class="glass-container" id="authContainer">
         <header>
-            <h1>Data Cleaner <span>Pro</span></h1>
-            <p>Sanitize and predict missing data columns effortlessly.</p>
+            <h1>Data Cleaner <span>Auth</span></h1>
+            <p>Please login or register to continue</p>
         </header>
+
+        <main>
+            <div id="authErrorArea" class="error-area hidden">
+                <p id="authErrorMsg"></p>
+            </div>
+            <div id="loginSection" style="margin-top:20px;">
+                <form id="loginForm" style="display:flex; flex-direction:column; gap:10px;">
+                    <input type="text" id="loginUsername" placeholder="Username" required style="padding:10px; border-radius:5px; border:1px solid #ccc;">
+                    <input type="password" id="loginPassword" placeholder="Password" required style="padding:10px; border-radius:5px; border:1px solid #ccc;">
+                    <button type="submit" class="primary-btn">Login</button>
+                    <p style="text-align:center; margin-top:10px; font-size:14px;">Don't have an account? <a href="#" id="showRegisterLink" style="color:#007bff; text-decoration:none;">Register</a></p>
+                </form>
+            </div>
+
+            <div id="registerSection" style="margin-top:20px; display:none;">
+                <form id="registerForm" style="display:flex; flex-direction:column; gap:10px;">
+                    <input type="text" id="registerUsername" placeholder="New Username" required style="padding:10px; border-radius:5px; border:1px solid #ccc;">
+                    <input type="password" id="registerPassword" placeholder="New Password" required style="padding:10px; border-radius:5px; border:1px solid #ccc;">
+                    <button type="submit" class="secondary-btn">Register</button>
+                    <p style="text-align:center; margin-top:10px; font-size:14px;">Already have an account? <a href="#" id="showLoginLink" style="color:#007bff; text-decoration:none;">Login</a></p>
+                </form>
+            </div>
+        </main>
+    </div>
+
+    <div class="glass-container hidden" id="mainContainer">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <header>
+                <h1>Data Cleaner <span>Pro</span></h1>
+                <p>Sanitize and predict missing data columns effortlessly.</p>
+            </header>
+            <button id="logoutBtn" class="secondary-btn" style="height:fit-content;">Logout</button>
+        </div>
 
         <main>
             <div class="upload-area" id="uploadArea">

@@ -11,3 +11,6 @@ sentencepiece
 tiktoken
 scikit-learn
 sse-starlette
+passlib
+bcrypt
+python-jose[cryptography]

@@ -14,8 +14,166 @@ const mainContainer = document.getElementById('mainContainer');
 const previewThead = document.getElementById('previewThead');
 const previewTbody = document.getElementById('previewTbody');
 
+const authContainer = document.getElementById('authContainer');
+const loginSection = document.getElementById('loginSection');
+const registerSection = document.getElementById('registerSection');
+const loginForm = document.getElementById('loginForm');
+const registerForm = document.getElementById('registerForm');
+const loginUsernameInput = document.getElementById('loginUsername');
+const loginPasswordInput = document.getElementById('loginPassword');
+const registerUsernameInput = document.getElementById('registerUsername');
+const registerPasswordInput = document.getElementById('registerPassword');
+const showRegisterLink = document.getElementById('showRegisterLink');
+const showLoginLink = document.getElementById('showLoginLink');
+const logoutBtn = document.getElementById('logoutBtn');
+const authErrorArea = document.getElementById('authErrorArea');
+const authErrorMsg = document.getElementById('authErrorMsg');
+
+let currentToken = localStorage.getItem('token');
+
+
 let selectedFile = null;
 const API_BASE = "http://localhost:8000";
+
+function checkAuth() {
+    if (currentToken) {
+        authContainer.classList.add('hidden');
+        mainContainer.classList.remove('hidden');
+    } else {
+        authContainer.classList.remove('hidden');
+        mainContainer.classList.add('hidden');
+        resetApp();
+    }
+}
+
+function showAuthError(msg) {
+    authErrorMsg.textContent = msg;
+    authErrorArea.classList.remove('hidden');
+}
+
+function hideAuthError() {
+    authErrorArea.classList.add('hidden');
+}
+
+async function submitLogin() {
+    hideAuthError();
+    const username = loginUsernameInput.value.trim();
+    const password = loginPasswordInput.value;
+    
+    if (!username || !password) {
+        showAuthError("Username and password are required.");
+        return;
+    }
+    
+    try {
+        const formData = new URLSearchParams();
+        formData.append('username', username);
+        formData.append('password', password);
+        const response = await fetch(`${API_BASE}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            let errorMessage = "Authentication failed.";
+            if (errData && errData.detail) {
+                if (typeof errData.detail === 'string') {
+                    errorMessage = errData.detail;
+                } else if (Array.isArray(errData.detail)) {
+                    errorMessage = errData.detail.map(e => e.msg).join(", ");
+                }
+            }
+            throw new Error(errorMessage);
+        }
+
+        const data = await response.json();
+        currentToken = data.access_token;
+        localStorage.setItem('token', currentToken);
+        loginUsernameInput.value = '';
+        loginPasswordInput.value = '';
+        checkAuth();
+    } catch(err) {
+        showAuthError(err.message);
+    }
+}
+
+async function submitRegister() {
+    hideAuthError();
+    const username = registerUsernameInput.value.trim();
+    const password = registerPasswordInput.value;
+    
+    if (!username || !password) {
+        showAuthError("Username and password are required.");
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            let errorMessage = "Registration failed.";
+            if (errData && errData.detail) {
+                if (typeof errData.detail === 'string') {
+                    errorMessage = errData.detail;
+                } else if (Array.isArray(errData.detail)) {
+                    errorMessage = errData.detail.map(e => e.msg).join(", ");
+                }
+            }
+            throw new Error(errorMessage);
+        }
+
+        const data = await response.json();
+        currentToken = data.access_token;
+        localStorage.setItem('token', currentToken);
+        registerUsernameInput.value = '';
+        registerPasswordInput.value = '';
+        checkAuth();
+    } catch(err) {
+        showAuthError(err.message);
+    }
+}
+
+showRegisterLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    loginSection.style.display = 'none';
+    registerSection.style.display = 'block';
+    hideAuthError();
+});
+
+showLoginLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    registerSection.style.display = 'none';
+    loginSection.style.display = 'block';
+    hideAuthError();
+});
+
+loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitLogin();
+});
+
+registerForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submitRegister();
+});
+
+logoutBtn.addEventListener('click', () => {
+    currentToken = null;
+    localStorage.removeItem('token');
+    loginSection.style.display = 'block';
+    registerSection.style.display = 'none';
+    checkAuth();
+});
+
+checkAuth();
+
 
 uploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -91,6 +249,7 @@ processBtn.addEventListener('click', async () => {
         addLog("Uploading file...");
         const response = await fetch(`${API_BASE}/upload`, {
             method: 'POST',
+            headers: { 'Authorization': `Bearer ${currentToken}` },
             body: formData
         });
 
@@ -104,7 +263,7 @@ processBtn.addEventListener('click', async () => {
         addLog(`Upload successful. Job ID: ${jobId}`);
 
         // Connect to SSE stream
-        const eventSource = new EventSource(`${API_BASE}/stream/${jobId}`);
+        const eventSource = new EventSource(`${API_BASE}/stream/${jobId}?token=${currentToken}`);
 
         const handleStreamError = (msg) => {
             loader.classList.add('hidden');
@@ -152,7 +311,9 @@ processBtn.addEventListener('click', async () => {
 
 async function showResults(jobId) {
     try {
-        const response = await fetch(`${API_BASE}/api/preview/${jobId}`);
+        const response = await fetch(`${API_BASE}/api/preview/${jobId}`, {
+            headers: { 'Authorization': `Bearer ${currentToken}` }
+        });
         if (!response.ok) throw new Error("Failed to load preview.");
         const data = await response.json();
         const previewData = data.preview;
@@ -190,14 +351,14 @@ async function showResults(jobId) {
         loader.classList.add('hidden');
         resultArea.classList.remove('hidden');
         
-        downloadLink.href = `${API_BASE}/download/${jobId}`;
+        downloadLink.href = `${API_BASE}/download/${jobId}?token=${currentToken}`;
 
     } catch(err) {
         showError(err.message);
     }
 }
 
-resetBtn.addEventListener('click', () => {
+function resetApp() {
     selectedFile = null;
     fileInput.value = "";
     fileNameDisplay.textContent = "";
@@ -206,4 +367,7 @@ resetBtn.addEventListener('click', () => {
     processBtn.classList.remove('hidden');
     processBtn.disabled = true;
     mainContainer.classList.remove('wide');
-});
+}
+
+resetBtn.addEventListener('click', resetApp);
+
