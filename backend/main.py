@@ -14,10 +14,14 @@ import numpy as np
 import os
 import uuid
 import asyncio
+import time
 
 from .core.data_cleaner import get_cleaner
 from . import models, auth, database
 from .database import engine
+
+PROCESSED_STORAGE_PATH = "backend/storage/processed"
+os.makedirs(PROCESSED_STORAGE_PATH, exist_ok=True)
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -57,6 +61,18 @@ def remove_file(path: str):
     if os.path.exists(path):
         os.remove(path)
 
+def cleanup_old_files(user_id: int, db: Session):
+    user_jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.user_id == user_id).order_by(models.ProcessingJob.created_at.desc()).all()
+    if len(user_jobs) > 10:
+        jobs_to_delete = user_jobs[10:]
+        for j in jobs_to_delete:
+            out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{j.id}_{j.filename}")
+            remove_file(out_path)
+            db.delete(j)
+            if j.id in jobs:
+                del jobs[j.id]
+        db.commit()
+
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...), 
@@ -66,10 +82,8 @@ async def upload_file(
     if not file.filename.endswith(('.csv', '.xlsx')):
          raise HTTPException(status_code=400, detail="Invalid file format.")
     
-    # Update Retention Policy logic to count files per user
+    # Retention policy handles cleanup automatically, no block needed here.
     user_jobs_count = db.query(models.ProcessingJob).filter(models.ProcessingJob.user_id == current_user.id).count()
-    if user_jobs_count >= 10:
-        raise HTTPException(status_code=400, detail="Retention policy: Maximum 10 files per user reached.")
 
     job_id = str(uuid.uuid4())
     temp_path = f"temp_{job_id}_{file.filename}"
@@ -101,6 +115,7 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
         await job["event_queue"].put({"event": "progress", "data": msg})
 
     try:
+        start_time = time.time()
         await progress_callback("Loading Data...")
         is_csv = original_filename.endswith('.csv')
         
@@ -153,12 +168,10 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             result_df['Độ tự tin'] = do_tu_tin
         
         await progress_callback("Generating Preview...")
-        def generate_preview():
-            return result_df.head(100).fillna("").to_dict(orient="records")
-            
-        job["preview"] = await asyncio.to_thread(generate_preview)
+        # We no longer keep total preview in memory, it will be lazy loaded.
+        job["preview"] = []
         
-        out_path = f"cleaned_{job_id}_{original_filename}"
+        out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job_id}_{original_filename}")
         
         def save_file():
             if out_path.endswith('.csv'):
@@ -170,11 +183,39 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             
         job["file_path"] = out_path
         job["status"] = "done"
+        
+        total_rows = len(result_df)
+        total_columns = len(result_df.columns)
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        db = database.SessionLocal()
+        db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
+        if db_job:
+            db_job.status = "done"
+            db_job.total_rows = total_rows
+            db_job.total_columns = total_columns
+            db_job.processing_time_ms = processing_time_ms
+            db.commit()
+            
+            # trigger post-upload hook to cleanup old files
+            cleanup_old_files(db_job.user_id, db)
+            
+        db.close()
+        
         await job["event_queue"].put({"event": "done", "data": "Processing complete"})
         
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
+        
+        db = database.SessionLocal()
+        db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
+        if db_job:
+            db_job.status = "error"
+            db_job.error_message = str(e)
+            db.commit()
+        db.close()
+        
         await job["event_queue"].put({"event": "error", "data": str(e)})
     finally:
         remove_file(temp_path)
@@ -200,43 +241,58 @@ async def stream(job_id: str, current_user: models.User = Depends(get_user_from_
                 break
     return EventSourceResponse(event_generator())
 
-@app.get("/api/preview/{job_id}")
-def get_preview(job_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+@app.get("/api/jobs/{job_id}/preview")
+def get_job_preview(job_id: str, skip: int = 0, limit: int = 100, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
     db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
-    if db_job and db_job.user_id != current_user.id:
+    if not db_job or db_job.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access Denied")
-    
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] != "done":
-        if job["status"] == "error":
-            raise HTTPException(status_code=500, detail=job["error"])
+    if db_job.status != "done":
         raise HTTPException(status_code=400, detail="Job not done yet")
-    return {"preview": job["preview"]}
+    
+    out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job_id}_{db_job.filename}")
+    if not os.path.exists(out_path):
+        raise HTTPException(status_code=404, detail="Data file not found")
+        
+    try:
+        if out_path.endswith('.csv'):
+            df = pd.read_csv(out_path, skiprows=range(1, skip + 1), nrows=limit)
+        else:
+            df = pd.read_excel(out_path, skiprows=range(1, skip + 1), nrows=limit)
+        return {"preview": df.fillna("").to_dict(orient="records")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/download/{job_id}")
+
+@app.get("/api/jobs/{job_id}/download")
 def download_result(job_id: str, current_user: models.User = Depends(get_user_from_token_query), db: Session = Depends(database.get_db)):
     db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
-    if db_job and db_job.user_id != current_user.id:
+    if not db_job or db_job.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access Denied")
-        
-    job = jobs.get(job_id)
-    if not job or not job.get("file_path"):
-        raise HTTPException(status_code=404, detail="File not found")
-        
-    out_path = job["file_path"]
     
-    def cleanup():
-        remove_file(out_path)
-        del jobs[job_id]
+    out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job_id}_{db_job.filename}")
+    if not os.path.exists(out_path):
+        raise HTTPException(status_code=404, detail="File not found")
         
     return FileResponse(
         out_path, 
         media_type="application/octet-stream", 
-        filename=out_path.split(f"_{job_id}_")[-1] if f"_{job_id}_" in out_path else out_path,
-        background=BackgroundTask(cleanup)
+        filename=f"cleaned_{db_job.filename}"
     )
+
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
+    if not db_job or db_job.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access Denied")
+        
+    out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job_id}_{db_job.filename}")
+    remove_file(out_path)
+    db.delete(db_job)
+    db.commit()
+    if job_id in jobs:
+        del jobs[job_id]
+        
+    return {"message": "Deleted successfully"}
 
 class UserCreate(BaseModel):
     username: str
@@ -279,10 +335,17 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.get("/api/dashboard/jobs")
+@app.get("/api/jobs")
 def get_user_jobs(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
-    user_jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.user_id == current_user.id).all()
-    return {"jobs": [{"id": job.id, "filename": job.filename, "status": job.status, "created_at": job.created_at} for job in user_jobs]}
+    user_jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.user_id == current_user.id).order_by(models.ProcessingJob.created_at.desc()).all()
+    return {"jobs": [{"id": j.id, "filename": j.filename, "status": j.status, "created_at": j.created_at, "total_rows": j.total_rows, "total_columns": j.total_columns, "processing_time_ms": j.processing_time_ms} for j in user_jobs]}
+
+@app.get("/api/jobs/{job_id}")
+def get_job_detail(job_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    j = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id, models.ProcessingJob.user_id == current_user.id).first()
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"id": j.id, "filename": j.filename, "status": j.status, "created_at": j.created_at, "total_rows": j.total_rows, "total_columns": j.total_columns, "processing_time_ms": j.processing_time_ms, "error_message": j.error_message}
 
 @app.get("/api/admin/system_status")
 def admin_status(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):

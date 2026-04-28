@@ -31,6 +31,13 @@ class ProcessingJob(Base):
     filename = Column(String)
     status = Column(String)
     user_id = Column(Integer, ForeignKey("users.id"))
+    dictionary_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    total_rows = Column(Integer, nullable=True)
+    total_columns = Column(Integer, nullable=True)
+    processing_time_ms = Column(Integer, nullable=True)
+    error_message = Column(String, nullable=True)
+    
     owner = relationship("User", back_populates="jobs")
+    dictionary = relationship("Dictionary")
