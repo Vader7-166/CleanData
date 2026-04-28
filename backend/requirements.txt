@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pandas
+transformers
+torch
+python-multipart
+openpyxl
+sqlalchemy
+protobuf
+sentencepiece
+tiktoken
+scikit-learn
+sse-starlette
+passlib
+bcrypt
+python-jose[cryptography]
+psycopg2-binary
