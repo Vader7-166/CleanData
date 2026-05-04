@@ -8,7 +8,7 @@ import os
 import asyncio
 
 class DataCleaner:
-    def __init__(self, model_path, dict_path="/dataset/dictv3.csv"):
+    def __init__(self, model_path, dict_path="dataset/dictv2.csv"):
         self.model_path = model_path
         print(f"Loading Tokenizer from {model_path}...")
         try:
@@ -76,6 +76,8 @@ class DataCleaner:
             lop_1 = lop_1 if lop_1 not in ['nan', 'None', '0', ''] else 'không_có'
             lop_2 = str(row.get('Lớp 2', 'không_có'))
             lop_2 = lop_2 if lop_2 not in ['nan', 'None', '0', ''] else 'không_có'
+            ma_hs = str(row.get('Mã HS', 'không_có'))
+            ma_hs = ma_hs if ma_hs not in ['nan', 'None', '0', ''] else 'không_có'
 
             # Pre-compile regular expressions for efficiency
             compiled_keywords = []
@@ -87,7 +89,7 @@ class DataCleaner:
 
             dict_mapping.append({
                 'keywords': compiled_keywords,
-                'label_str': f"{d_sp} | {loai} | {lop_1} | {lop_2}"
+                'label_str': f"{d_sp} | {loai} | {lop_1} | {lop_2} | {ma_hs}"
             })
         return dict_mapping
 
@@ -327,7 +329,7 @@ class DataCleaner:
 
         def split_and_assign():
             temp_cols = df_clean['Ket_Qua_Gop'].str.split(r' \| ', expand=True)
-            for i in range(4):
+            for i in range(5):
                 if i not in temp_cols.columns:
                     temp_cols[i] = 'không_có'
                     
@@ -335,6 +337,9 @@ class DataCleaner:
             df_clean['Loại'] = temp_cols[1]
             df_clean['Lớp 1'] = temp_cols[2]
             df_clean['Lớp 2'] = temp_cols[3]
+            
+            mask = (temp_cols[4] != 'không_có') & temp_cols[4].notna() & (temp_cols[4] != '')
+            df_clean['Mã HS'] = np.where(mask, temp_cols[4], df_clean['Mã HS'])
 
             df_clean['MDSD'] = np.nan
             df_clean['Năm'] = np.nan
@@ -361,9 +366,9 @@ def get_cleaner():
     if cleaner is None:
         model_path = os.environ.get("MODEL_PATH", "/working")
         # Ensure dict_path is correct regardless of where uvicorn is run from
-        default_dict_path = os.path.join(os.path.dirname(__file__), "../../dataset/dictv3.csv")
+        default_dict_path = os.path.join(os.path.dirname(__file__), "../../dataset/dictv2.csv")
         if not os.path.exists(default_dict_path):
-            default_dict_path = "dataset/dictv3.csv"
+            default_dict_path = "dataset/dictv2.csv"
 
         dict_path = os.environ.get("DICT_PATH", default_dict_path)
         cleaner = DataCleaner(model_path, dict_path)

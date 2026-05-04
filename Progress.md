@@ -15,10 +15,12 @@
 [ ]Cải thiện tính năng preview(hiển thị nhiều hơn 100 dòng, cho phép xem tất cả các cột, sử dụng preview chuẩn excel)
 [ ]Tiếp tục chỉnh sửa thiết kế lại front-end(cố gắng thêm cho nó 1 file thiết kế vd như figma hoặc canva)
 [ ]Gỡ bỏ việc hover khiến widget nảy lên(THIẾT KẾ RẤT NGU).
+[ ]Sử dụng công nghệ để tránh việc f5 lại trang mất hết session xử lý.
 
 # Chi tiết tính năng upload dict
 [ ]Cho phép upload dict và lưu trữ các bộ từ điển đó để sử dụng
 [ ]Cho phép xem danh sách các bộ từ điển đã upload
 [ ]Cho phép chọn bộ từ điển để sử dụng(Bộ từ điển được sắp xếp tùy theo từng loại sản phẩm, việc chọn trước sẽ giúp tốc độ xử lý nhanh hơn)
 [ ]Thống kê các file đã sử dụng
+
 
