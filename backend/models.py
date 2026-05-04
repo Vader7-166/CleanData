@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -19,10 +19,22 @@ class Dictionary(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String)
+    is_active = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     
     owner = relationship("User", back_populates="dictionaries")
+
+class DictionaryUsage(Base):
+    __tablename__ = "dictionary_usage"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    dictionary_id = Column(Integer, ForeignKey("dictionaries.id"))
+    job_id = Column(String, ForeignKey("processing_jobs.id"))
+    used_at = Column(DateTime, default=datetime.utcnow)
+    
+    dictionary = relationship("Dictionary")
+    job = relationship("ProcessingJob")
 
 class ProcessingJob(Base):
     __tablename__ = "processing_jobs"

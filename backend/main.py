@@ -21,7 +21,16 @@ from . import models, auth, database
 from .database import engine
 
 PROCESSED_STORAGE_PATH = "backend/storage/processed"
+DICTIONARY_STORAGE_PATH = "backend/storage/dictionaries"
 os.makedirs(PROCESSED_STORAGE_PATH, exist_ok=True)
+os.makedirs(DICTIONARY_STORAGE_PATH, exist_ok=True)
+
+from sqlalchemy import text
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE dictionaries ADD COLUMN is_active BOOLEAN DEFAULT FALSE"))
+except Exception as e:
+    pass
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -81,6 +90,13 @@ async def upload_file(
 ):
     if not file.filename.endswith(('.csv', '.xlsx')):
          raise HTTPException(status_code=400, detail="Invalid file format.")
+         
+    active_dict = db.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
+    if not active_dict:
+        raise HTTPException(
+            status_code=400, 
+            detail="Không có bộ từ điển nào được kích hoạt. Vui lòng upload và chọn một bộ từ điển trước khi Clean Data."
+        )
     
     # Retention policy handles cleanup automatically, no block needed here.
     user_jobs_count = db.query(models.ProcessingJob).filter(models.ProcessingJob.user_id == current_user.id).count()
@@ -143,14 +159,17 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
 
         df = await asyncio.to_thread(load_dataframe, temp_path, is_csv)
             
+        db_sync = database.SessionLocal()
+        active_dict = db_sync.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
+        dict_path = os.path.join(DICTIONARY_STORAGE_PATH, active_dict.filename) if active_dict else None
+        dict_id = active_dict.id if active_dict else None
+        db_sync.close()
+        
         cleaner = get_cleaner()
-        # process_async currently blocks, we should run it as a task but it's an async function.
-        # we can just await it since we'll add asyncio.sleep(0) inside it.
-        result_df = await cleaner.process_async(df, progress_callback=progress_callback)
+        result_df = await cleaner.process_async(df, progress_callback=progress_callback, dict_path=dict_path)
         
         # Apply column reordering logic
         try:
-            import os
             sample_path = os.path.join(os.path.dirname(__file__), "../dataset/sample.csv")
             sample_df = pd.read_csv(sample_path, nrows=0)
             expected_cols = sample_df.columns.tolist()
@@ -168,7 +187,6 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             result_df['Độ tự tin'] = do_tu_tin
         
         await progress_callback("Generating Preview...")
-        # We no longer keep total preview in memory, it will be lazy loaded.
         job["preview"] = []
         
         out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job_id}_{original_filename}")
@@ -195,6 +213,12 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             db_job.total_rows = total_rows
             db_job.total_columns = total_columns
             db_job.processing_time_ms = processing_time_ms
+            db_job.dictionary_id = dict_id
+            
+            if dict_id:
+                usage = models.DictionaryUsage(dictionary_id=dict_id, job_id=job_id)
+                db.add(usage)
+                
             db.commit()
             
             # trigger post-upload hook to cleanup old files
@@ -354,5 +378,91 @@ def admin_status(current_user: models.User = Depends(auth.get_current_user), db:
     users_count = db.query(models.User).count()
     jobs_count = db.query(models.ProcessingJob).count()
     return {"users_count": users_count, "jobs_count": jobs_count}
+
+# =======================================================
+# Dictionary Management Endpoints
+# =======================================================
+
+@app.post("/api/dictionaries/upload")
+async def upload_dictionary(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+        
+    file_id = str(uuid.uuid4())
+    filename = f"{file_id}_{file.filename}"
+    out_path = os.path.join(DICTIONARY_STORAGE_PATH, filename)
+    
+    with open(out_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    count = db.query(models.Dictionary).count()
+    is_active = (count == 0)
+    
+    new_dict = models.Dictionary(
+        filename=filename,
+        user_id=current_user.id,
+        is_active=is_active
+    )
+    db.add(new_dict)
+    db.commit()
+    db.refresh(new_dict)
+    
+    return {"id": new_dict.id, "filename": file.filename, "is_active": new_dict.is_active, "message": "Uploaded successfully."}
+
+@app.get("/api/dictionaries")
+def list_dictionaries(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    dicts = db.query(models.Dictionary).order_by(models.Dictionary.created_at.desc()).all()
+    return {"dictionaries": [
+        {
+            "id": d.id, 
+            "filename": d.filename.split('_', 1)[1] if '_' in d.filename else d.filename, 
+            "is_active": d.is_active, 
+            "created_at": d.created_at,
+            "user_id": d.user_id
+        } 
+        for d in dicts
+    ]}
+
+@app.post("/api/dictionaries/{dict_id}/activate")
+def activate_dictionary(dict_id: int, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    d = db.query(models.Dictionary).filter(models.Dictionary.id == dict_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Dictionary not found.")
+        
+    db.query(models.Dictionary).update({"is_active": False})
+    
+    d.is_active = True
+    db.commit()
+    
+    return {"message": "Dictionary activated successfully."}
+
+@app.delete("/api/dictionaries/{dict_id}")
+def delete_dictionary(dict_id: int, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    d = db.query(models.Dictionary).filter(models.Dictionary.id == dict_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Dictionary not found.")
+    
+    path = os.path.join(DICTIONARY_STORAGE_PATH, d.filename)
+    if os.path.exists(path):
+        os.remove(path)
+        
+    db.delete(d)
+    db.commit()
+    
+    return {"message": "Deleted successfully."}
+
+@app.get("/api/dictionaries/stats")
+def dictionary_stats(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    from sqlalchemy import func
+    stats = db.query(
+        models.DictionaryUsage.dictionary_id, 
+        func.count(models.DictionaryUsage.id).label('usage_count')
+    ).group_by(models.DictionaryUsage.dictionary_id).all()
+    
+    return {"stats": [{"dictionary_id": s.dictionary_id, "usage_count": s.usage_count} for s in stats]}
 
 

@@ -8,7 +8,7 @@ import os
 import asyncio
 
 class DataCleaner:
-    def __init__(self, model_path, dict_path="dataset/dictv2.csv"):
+    def __init__(self, model_path):
         self.model_path = model_path
         print(f"Loading Tokenizer from {model_path}...")
         try:
@@ -29,89 +29,7 @@ class DataCleaner:
             self.label_encoder = pickle.load(f)
 
         self.THRESHOLD = 0.85
-        self.DICT_THRESHOLD = 15
         self.MAX_CONCURRENT_CHUNKS = 4
-        self.HIGH_VALUE_KEYWORDS = [
-            "năng lượng mặt trời", "nlmt", "bán nguyệt", "tuýp bán nguyệt", "âm trần", "đèn âm trần",
-            "âm nước", "đèn âm nước", "mắt cáo", "rọi ray", "đèn rọi ray", "ống bơ", "ốp trần",
-            "gắn tường", "đèn tường", "đội đầu", "đèn pin", "diệt côn trùng", "bắt muỗi",
-            "ngoài trời", "cảnh quan", "sân vườn", "bảng hiệu", "soi bảng", "biển quảng cáo",
-            "nhà xưởng", "nhà máy", "đánh cá", "câu mực", "bàn thờ", "trang trí",
-            "thoát hiểm", "sự cố", "khẩn cấp", "panel", "đèn panel", "đèn chùm", "đèn thả",
-            "dây led", "led cuộn", "thanh", "hồng ngoại", "cảm biến", "tuýp", "bulb", "tube",
-            "bàn", "cực tím", "halogen", "cháy", "nổ", "dây", "uv", "hồng ngoại","phát quang",
-            "ufo", "công nghiệp", "highbay", "lowbay", "flood", "pha", "downlight", "spotlight",
-            "tracklight", "đường phố"
-        ]
-        self.JUNK_KEYWORDS = [
-            "chiếu sáng", "mới", "100", "hàng mới 100", "hàng mới", "hàng",
-            "chính hãng", "chi tiết", "bộ phận", "công suất",
-            "kích thước", "điện áp", "chất liệu", "nhôm", "nhựa", "hoạt động",
-            "nsx", "co", "ltd", "industrial", "factory", "zhejiang", "zhongshan",
-            "mới 100", "model", "dạng", "loại", "có", "led", "đèn led", "đèn"
-        ]
-
-        print("Loading Dictionary...")
-        self.dict_mapping = self._load_dict(dict_path)
-
-    def _load_dict(self, dict_path):
-        if not os.path.exists(dict_path):
-            print(f"Warning: Dictionary file not found at {dict_path}")
-            return []
-        try:
-            df_dict = pd.read_csv(dict_path, encoding='utf-8-sig')
-        except:
-            df_dict = pd.read_csv(dict_path, encoding='latin1')
-
-        dict_mapping = []
-        self.word_to_mappings = {}
-        mapping_idx = 0
-
-        for _, row in df_dict.iterrows():
-            kw_str = str(row.get('Keyword', '')).lower()
-            keywords = [self.clean_text_for_dict(k) for k in kw_str.split(',') if self.clean_text_for_dict(k) != '']
-            keywords.sort(key=lambda x: len(x), reverse=True)
-
-            d_sp = str(row.get('Dòng SP', 'không_có'))
-            d_sp = d_sp if d_sp not in ['nan', 'None', '0', ''] else 'không_có'
-            loai = str(row.get('Loại', 'không_có'))
-            loai = loai if loai not in ['nan', 'None', '0', ''] else 'không_có'
-            lop_1 = str(row.get('Lớp 1', 'không_có'))
-            lop_1 = lop_1 if lop_1 not in ['nan', 'None', '0', ''] else 'không_có'
-            lop_2 = str(row.get('Lớp 2', 'không_có'))
-            lop_2 = lop_2 if lop_2 not in ['nan', 'None', '0', ''] else 'không_có'
-            ma_hs = str(row.get('Mã HS', 'không_có'))
-            ma_hs = ma_hs if ma_hs not in ['nan', 'None', '0', ''] else 'không_có'
-
-            # Pre-compile regular expressions for efficiency and precalculate scores
-            compiled_keywords = []
-            for kw in keywords:
-                score = len(kw.split())
-                if any(hv in kw for hv in self.HIGH_VALUE_KEYWORDS):
-                    score = 20
-                elif any(kw == jk for jk in self.JUNK_KEYWORDS):
-                    score = 0
-                
-                compiled_keywords.append({
-                    "text": kw,
-                    "pattern": re.compile(r'\b' + re.escape(kw) + r'\b'),
-                    "score": score,
-                    "word_set": set(kw.split())
-                })
-                
-                # Build inverted index
-                for word in kw.split():
-                    if word not in self.word_to_mappings:
-                        self.word_to_mappings[word] = set()
-                    self.word_to_mappings[word].add(mapping_idx)
-
-            dict_mapping.append({
-                'keywords': compiled_keywords,
-                'label_str': f"{d_sp} | {loai} | {lop_1} | {lop_2} | {ma_hs}"
-            })
-            mapping_idx += 1
-
-        return dict_mapping
 
     def clean_text_for_dict(self, text):
         text = str(text).lower()
@@ -223,7 +141,7 @@ class DataCleaner:
                 
         return predictions
 
-    async def process_async(self, df, progress_callback=None):
+    async def process_async(self, df, progress_callback=None, dict_path=None):
         if progress_callback: await progress_callback("Mapping Data...")
         
         def initial_mapping():
@@ -283,50 +201,42 @@ class DataCleaner:
 
         df_clean = await asyncio.to_thread(initial_mapping)
 
-        if progress_callback: await progress_callback("Extracting Information...")
-        
-        def extract_info():
-            if df_clean.empty:
-                df_clean['Hãng'] = ''
-                df_clean['Công suất'] = ''
-                df_clean['Tên hàng'] = ''
-            else:
-                df_clean[['Hãng', 'Công suất', 'Tên hàng']] = df_clean['Tên hàng raw'].apply(self.trich_xuat_thong_tin)
-            
-            df_clean['input_for_ai'] = "Hãng: " + df_clean['Hãng'].astype(str) + " - Công suất: " + df_clean['Công suất'].astype(str) + " - Sản phẩm: " + df_clean['Tên hàng'].astype(str).str.lower()
-            df_clean['input_for_ai'] = df_clean['input_for_ai'].apply(self.clean_text_for_dict)
-            
-        await asyncio.to_thread(extract_info)
-
-        if progress_callback: await progress_callback("Dictionary Matching (Pass 1)...")
+        if progress_callback: await progress_callback("Processing Data (Pass 1 - Parallel)...")
         
         if df_clean.empty:
+            df_clean['Hãng'] = ''
+            df_clean['Công suất'] = ''
+            df_clean['Tên hàng'] = ''
+            df_clean['input_for_ai'] = ''
             df_clean['Ket_Qua_Gop'] = ''
             df_clean['Độ Tự Tin (%)'] = 0.0
             df_clean['Trạng Thái'] = ''
         else:
-            total_rows = len(df_clean)
-            chunk_size = 2000
-            
             import concurrent.futures
+            import multiprocessing
+            from backend.core.worker import init_worker, process_chunk
+            
+            total_rows = len(df_clean)
+            num_cores = multiprocessing.cpu_count()
+            chunk_size = max(5000, total_rows // (num_cores * 2))
+            if chunk_size == 0: chunk_size = 5000
+            
             loop = asyncio.get_running_loop()
             
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores, initializer=init_worker, initargs=(dict_path,)) as executor:
                 tasks = []
                 for i in range(0, total_rows, chunk_size):
-                    chunk = df_clean['input_for_ai'].iloc[i:i+chunk_size]
-                    
-                    def process_dict_chunk(c=chunk):
-                        return c.apply(self.predict_dictionary)
-                    
-                    tasks.append(loop.run_in_executor(executor, process_dict_chunk))
+                    chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
+                    tasks.append(loop.run_in_executor(executor, process_chunk, chunk))
                 
                 if progress_callback: 
-                    await progress_callback(f"Dictionary Matching... (processing {total_rows} rows concurrently)")
+                    await progress_callback(f"Processing Data... (processing {total_rows} rows concurrently)")
                 
                 results_list = await asyncio.gather(*tasks)
 
-            df_clean[['Ket_Qua_Gop', 'Độ Tự Tin (%)', 'Trạng Thái']] = pd.concat(results_list)
+            processed_df = pd.concat(results_list)
+            for col in processed_df.columns:
+                df_clean[col] = processed_df[col]
 
         if progress_callback: await progress_callback("AI Inference (Pass 2)...")
         
@@ -338,7 +248,7 @@ class DataCleaner:
             
             if fallback_texts:
                 total_ai_rows = len(fallback_texts)
-                ai_batch_size = 64
+                ai_batch_size = 128
                 
                 if progress_callback:
                     await progress_callback(f"AI Inference... (processing {total_ai_rows} rows concurrently)")
@@ -406,11 +316,5 @@ def get_cleaner():
     global cleaner
     if cleaner is None:
         model_path = os.environ.get("MODEL_PATH", "/working")
-        # Ensure dict_path is correct regardless of where uvicorn is run from
-        default_dict_path = os.path.join(os.path.dirname(__file__), "../../dataset/dictv2.csv")
-        if not os.path.exists(default_dict_path):
-            default_dict_path = "dataset/dictv2.csv"
-
-        dict_path = os.environ.get("DICT_PATH", default_dict_path)
-        cleaner = DataCleaner(model_path, dict_path)
+        cleaner = DataCleaner(model_path)
     return cleaner

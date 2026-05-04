@@ -4,7 +4,9 @@ import pandas as pd
 import os
 
 class DictionaryMatcher:
-    def __init__(self, dict_path="dataset/dictv2.csv", threshold=15):
+    def __init__(self, dict_path, threshold=15):
+        if not dict_path:
+            raise ValueError("dict_path is required")
         self.dict_path = dict_path
         self.DICT_THRESHOLD = threshold
         self.HIGH_VALUE_KEYWORDS = [
@@ -41,9 +43,24 @@ class DictionaryMatcher:
             return
             
         try:
-            df_dict = pd.read_csv(self.dict_path)
-        except UnicodeDecodeError:
-            df_dict = pd.read_csv(self.dict_path, encoding='latin1')
+            # Prefer utf-8-sig as per specification
+            df_dict = pd.read_csv(self.dict_path, encoding='utf-8-sig')
+        except Exception as e:
+            print(f"Notice: Failed to load dictionary with utf-8-sig, trying latin1. Error: {e}")
+            try:
+                df_dict = pd.read_csv(self.dict_path, encoding='latin1')
+            except Exception as e2:
+                print(f"Error: Could not load dictionary file {self.dict_path}. Error: {e2}")
+                return
+
+        # Validation: Check for mandatory columns
+        mandatory_cols = ['Keyword', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Mã HS']
+        missing_cols = [col for col in mandatory_cols if col not in df_dict.columns]
+        if missing_cols:
+            print(f"Error: Dictionary file is missing mandatory columns: {missing_cols}")
+            # Attempt to continue by adding missing columns as 'không_có'
+            for col in missing_cols:
+                df_dict[col] = 'không_có'
 
         mapping_idx = 0
         for _, row in df_dict.iterrows():
