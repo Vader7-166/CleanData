@@ -28,11 +28,9 @@ class DataCleaner:
         with open(f"{model_path}/label_encoder.pkl", "rb") as f:
             self.label_encoder = pickle.load(f)
 
-        print("Loading Dictionary...")
-        self.dict_mapping = self._load_dict(dict_path)
-        
         self.THRESHOLD = 0.85
         self.DICT_THRESHOLD = 15
+        self.MAX_CONCURRENT_CHUNKS = 4
         self.HIGH_VALUE_KEYWORDS = [
             "năng lượng mặt trời", "nlmt", "bán nguyệt", "tuýp bán nguyệt", "âm trần", "đèn âm trần",
             "âm nước", "đèn âm nước", "mắt cáo", "rọi ray", "đèn rọi ray", "ống bơ", "ốp trần",
@@ -53,6 +51,9 @@ class DataCleaner:
             "mới 100", "model", "dạng", "loại", "có", "led", "đèn led", "đèn"
         ]
 
+        print("Loading Dictionary...")
+        self.dict_mapping = self._load_dict(dict_path)
+
     def _load_dict(self, dict_path):
         if not os.path.exists(dict_path):
             print(f"Warning: Dictionary file not found at {dict_path}")
@@ -63,6 +64,9 @@ class DataCleaner:
             df_dict = pd.read_csv(dict_path, encoding='latin1')
 
         dict_mapping = []
+        self.word_to_mappings = {}
+        mapping_idx = 0
+
         for _, row in df_dict.iterrows():
             kw_str = str(row.get('Keyword', '')).lower()
             keywords = [self.clean_text_for_dict(k) for k in kw_str.split(',') if self.clean_text_for_dict(k) != '']
@@ -79,18 +83,34 @@ class DataCleaner:
             ma_hs = str(row.get('Mã HS', 'không_có'))
             ma_hs = ma_hs if ma_hs not in ['nan', 'None', '0', ''] else 'không_có'
 
-            # Pre-compile regular expressions for efficiency
+            # Pre-compile regular expressions for efficiency and precalculate scores
             compiled_keywords = []
             for kw in keywords:
+                score = len(kw.split())
+                if any(hv in kw for hv in self.HIGH_VALUE_KEYWORDS):
+                    score = 20
+                elif any(kw == jk for jk in self.JUNK_KEYWORDS):
+                    score = 0
+                
                 compiled_keywords.append({
                     "text": kw,
-                    "pattern": re.compile(r'\b' + re.escape(kw) + r'\b')
+                    "pattern": re.compile(r'\b' + re.escape(kw) + r'\b'),
+                    "score": score,
+                    "word_set": set(kw.split())
                 })
+                
+                # Build inverted index
+                for word in kw.split():
+                    if word not in self.word_to_mappings:
+                        self.word_to_mappings[word] = set()
+                    self.word_to_mappings[word].add(mapping_idx)
 
             dict_mapping.append({
                 'keywords': compiled_keywords,
                 'label_str': f"{d_sp} | {loai} | {lop_1} | {lop_2} | {ma_hs}"
             })
+            mapping_idx += 1
+
         return dict_mapping
 
     def clean_text_for_dict(self, text):
@@ -140,23 +160,28 @@ class DataCleaner:
         text_lower = self.clean_text_for_dict(text)
         best_mapping = None
         max_score = 0
+        
+        words = text_lower.split()
+        text_words = set(words)
+        candidate_indices = set()
+        for w in words:
+            if w in self.word_to_mappings:
+                candidate_indices.update(self.word_to_mappings[w])
 
-        for mapping in self.dict_mapping:
+        for idx in candidate_indices:
+            mapping = self.dict_mapping[idx]
             current_score = 0
             temp_text = text_lower
 
             for kw_obj in mapping['keywords']:
-                kw_text = kw_obj['text']
+                if not kw_obj['word_set'].issubset(text_words):
+                    continue
+                
                 pattern = kw_obj['pattern']
                 
                 if pattern.search(temp_text):
                     temp_text = pattern.sub(' ', temp_text)
-                    if any(hv in kw_text for hv in self.HIGH_VALUE_KEYWORDS):
-                        current_score += 20
-                    elif any(kw_text == jk for jk in self.JUNK_KEYWORDS):
-                        current_score += 0
-                    else:
-                        current_score += len(kw_text.split())
+                    current_score += kw_obj['score']
 
             if current_score > max_score:
                 max_score = current_score
@@ -282,18 +307,24 @@ class DataCleaner:
         else:
             total_rows = len(df_clean)
             chunk_size = 2000
-            results_list = []
             
-            for i in range(0, total_rows, chunk_size):
-                chunk = df_clean['input_for_ai'].iloc[i:i+chunk_size]
+            import concurrent.futures
+            loop = asyncio.get_running_loop()
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                tasks = []
+                for i in range(0, total_rows, chunk_size):
+                    chunk = df_clean['input_for_ai'].iloc[i:i+chunk_size]
+                    
+                    def process_dict_chunk(c=chunk):
+                        return c.apply(self.predict_dictionary)
+                    
+                    tasks.append(loop.run_in_executor(executor, process_dict_chunk))
+                
                 if progress_callback: 
-                    await progress_callback(f"Dictionary Matching... ({min(i+chunk_size, total_rows)}/{total_rows} rows)")
+                    await progress_callback(f"Dictionary Matching... (processing {total_rows} rows concurrently)")
                 
-                def process_dict_chunk(c=chunk):
-                    return c.apply(self.predict_dictionary)
-                
-                chunk_results = await asyncio.to_thread(process_dict_chunk)
-                results_list.append(chunk_results)
+                results_list = await asyncio.gather(*tasks)
 
             df_clean[['Ket_Qua_Gop', 'Độ Tự Tin (%)', 'Trạng Thái']] = pd.concat(results_list)
 
@@ -308,17 +339,27 @@ class DataCleaner:
             if fallback_texts:
                 total_ai_rows = len(fallback_texts)
                 ai_batch_size = 64
-                ai_predictions = []
                 
+                if progress_callback:
+                    await progress_callback(f"AI Inference... (processing {total_ai_rows} rows concurrently)")
+                
+                sem = asyncio.Semaphore(self.MAX_CONCURRENT_CHUNKS)
+                
+                async def run_ai_chunk(texts):
+                    async with sem:
+                        def process_ai_chunk(batch=texts):
+                            return self.predict_ai_batch(batch, batch_size=ai_batch_size)
+                        return await asyncio.to_thread(process_ai_chunk)
+
+                tasks = []
                 for i in range(0, total_ai_rows, ai_batch_size):
                     batch_texts = fallback_texts[i:i+ai_batch_size]
-                    if progress_callback:
-                        await progress_callback(f"AI Inference... ({min(i+ai_batch_size, total_ai_rows)}/{total_ai_rows} rows)")
-                    
-                    def process_ai_chunk(texts=batch_texts):
-                        return self.predict_ai_batch(texts, batch_size=ai_batch_size)
-                        
-                    batch_results = await asyncio.to_thread(process_ai_chunk)
+                    tasks.append(run_ai_chunk(batch_texts))
+                
+                ai_chunk_results = await asyncio.gather(*tasks)
+                
+                ai_predictions = []
+                for batch_results in ai_chunk_results:
                     ai_predictions.extend(batch_results)
                 
                 # Merge AI predictions back into the main DataFrame
