@@ -6,30 +6,45 @@ import torch
 import torch.nn.functional as F
 import os
 import asyncio
+import time
 
 class DataCleaner:
     def __init__(self, model_path):
         self.model_path = model_path
+        self.MAX_LENGTH = 64
         print(f"Loading Tokenizer from {model_path}...")
+        from transformers import AutoTokenizer
         try:
-            from transformers import RobertaTokenizer
-            self.tokenizer = RobertaTokenizer.from_pretrained(model_path, use_fast=False)
+            # Use fast tokenizer for better performance on CPU
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
         except Exception as e:
-            from transformers import AutoTokenizer
+            print(f"Failed to load fast AutoTokenizer: {e}. Falling back to slow...")
             self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
         
         print("Loading Model...")
         from transformers import AutoModelForSequenceClassification
         self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        if self.device.type == "cpu":
+            print("INFO: CUDA not available. Applying dynamic quantization for CPU optimization.")
+            # Quantize the model to int8 to speed up CPU inference
+            self.model = torch.quantization.quantize_dynamic(
+                self.model, {torch.nn.Linear}, dtype=torch.qint8
+            )
+            
         self.model.to(self.device)
         self.model.eval()
+        
+        if torch.cuda.is_available():
+            torch.backends.cudnn.benchmark = True
+            print("INFO: CUDA available, enabling cuDNN benchmark.")
 
         with open(f"{model_path}/label_encoder.pkl", "rb") as f:
             self.label_encoder = pickle.load(f)
 
         self.THRESHOLD = 0.85
-        self.MAX_CONCURRENT_CHUNKS = 4
+        self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
 
     def clean_text_for_dict(self, text):
         text = str(text).lower()
@@ -115,29 +130,50 @@ class DataCleaner:
 
         return pd.Series([None, 0.0, "Cần kiểm tra"])
 
-    def predict_ai_batch(self, texts, batch_size=32):
+    def predict_ai_batch(self, texts, batch_size=64):
         if not texts:
             return []
             
+        start_total = time.time()
         self.model.eval()
         predictions = []
         
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i+batch_size]
-            inputs = self.tokenizer(batch_texts, padding=True, truncation=True, max_length=128, return_tensors="pt")
+            
+            # Use fast tokenizer and reduced max_length
+            inputs = self.tokenizer(
+                batch_texts, 
+                padding=True, 
+                truncation=True, 
+                max_length=self.MAX_LENGTH, 
+                return_tensors="pt"
+            )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                with torch.autocast('cuda') if torch.cuda.is_available() else torch.autocast('cpu', enabled=False):
+                # Autocast only for GPU; can cause issues with quantized models on CPU
+                if self.device.type == "cuda":
+                    with torch.autocast('cuda'):
+                        outputs = self.model(**inputs)
+                else:
                     outputs = self.model(**inputs)
 
             probabilities = F.softmax(outputs.logits, dim=-1)
             max_probs, pred_ids = torch.max(probabilities, dim=-1)
 
-            for prob, pred_id in zip(max_probs.cpu().numpy(), pred_ids.cpu().numpy()):
-                label = self.label_encoder.inverse_transform([pred_id])[0]
+            max_probs_numpy = max_probs.cpu().numpy()
+            pred_ids_numpy = pred_ids.cpu().numpy()
+            
+            # Vectorized inverse transform
+            labels = self.label_encoder.inverse_transform(pred_ids_numpy)
+
+            for prob, label in zip(max_probs_numpy, labels):
                 status = "Tự động duyệt (AI)" if prob >= self.THRESHOLD else "Cần kiểm tra"
                 predictions.append((label, round(float(prob) * 100, 2), status))
+        
+        total_time = time.time() - start_total
+        print(f"INFO: AI Batch Inference of {len(texts)} rows took {total_time:.2f}s ({len(texts)/total_time:.2f} rows/s)")
                 
         return predictions
 
@@ -248,28 +284,20 @@ class DataCleaner:
             
             if fallback_texts:
                 total_ai_rows = len(fallback_texts)
-                ai_batch_size = 128
-                
-                if progress_callback:
-                    await progress_callback(f"AI Inference... (processing {total_ai_rows} rows concurrently)")
-                
-                sem = asyncio.Semaphore(self.MAX_CONCURRENT_CHUNKS)
-                
-                async def run_ai_chunk(texts):
-                    async with sem:
-                        def process_ai_chunk(batch=texts):
-                            return self.predict_ai_batch(batch, batch_size=ai_batch_size)
-                        return await asyncio.to_thread(process_ai_chunk)
+                # Optimized batch size for CPU sequential inference
+                ai_batch_size = 64
 
-                tasks = []
-                for i in range(0, total_ai_rows, ai_batch_size):
-                    batch_texts = fallback_texts[i:i+ai_batch_size]
-                    tasks.append(run_ai_chunk(batch_texts))
-                
-                ai_chunk_results = await asyncio.gather(*tasks)
+                print(f"DEBUG: AI Inference on {total_ai_rows} rows.")
                 
                 ai_predictions = []
-                for batch_results in ai_chunk_results:
+                for i in range(0, total_ai_rows, ai_batch_size):
+                    batch_texts = fallback_texts[i:i+ai_batch_size]
+                    
+                    if progress_callback and (i % (ai_batch_size * 20) == 0 or i == 0):
+                        await progress_callback(f"AI Inference... ({i}/{total_ai_rows} rows)")
+                    
+                    # Run batch inference in a thread to keep event loop responsive
+                    batch_results = await asyncio.to_thread(self.predict_ai_batch, batch_texts, batch_size=ai_batch_size)
                     ai_predictions.extend(batch_results)
                 
                 # Merge AI predictions back into the main DataFrame

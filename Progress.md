@@ -12,6 +12,7 @@
 [x]Cho phép xem preview các file đã upload
 [x]Cho phép tải các file đã upload
 [x]Cho phép xem thông tin chi tiết(số dòng, số cột, sử dụng bộ từ điển nào, số file đã xử lý, số file chưa xử lý, số file lỗi, thời gian xử lý)
+[ ]Thêm websocket để đưa ra số lượng dòng đang xử lý theo thời gian thực.
 [ ]Sửa lỗi xem chi tiết file bị tràn màn hình, font chữ trắng cùng với nền trắng, không tắt được.
 [ ]Cải thiện tính năng preview(hiển thị nhiều hơn 100 dòng, cho phép xem tất cả các cột, sử dụng preview chuẩn excel)
 [ ]Tiếp tục chỉnh sửa thiết kế lại front-end(cố gắng thêm cho nó 1 file thiết kế vd như figma hoặc canva)
