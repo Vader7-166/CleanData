@@ -10,15 +10,17 @@ services:
       - ./working:/working
       - ./backend:/app/backend
       - ./dataset:/app/dataset
+    env_file:
+      - .env
     environment:
       - MODEL_PATH=/working
       - DATABASE_URL=postgresql://user:password@db:5432/cleandata
     depends_on:
       - db
-    # Cài đặt nóng các thư viện missing và khởi động server (Bypass rebuild cực nhanh)
+    # Cài đặt nóng các thư viện missing và khởi động server
     command: >
-      sh -c "pip install --no-cache-dir scikit-learn psycopg2-binary pyahocorasick && 
-             uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+      sh -c "pip install --no-cache-dir scikit-learn psycopg2-binary pyahocorasick pyvi groq python-dotenv python-multipart openpyxl && 
+             uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
 
   db:
     image: postgres:15-alpine

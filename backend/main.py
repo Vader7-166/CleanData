@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import timedelta
@@ -15,8 +15,15 @@ import os
 import uuid
 import asyncio
 import time
+import io
+import traceback
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from .core.data_cleaner import get_cleaner
+from .core.dict_generator import DictionaryGenerator
 from . import models, auth, database
 from .database import engine
 
@@ -440,6 +447,22 @@ def activate_dictionary(dict_id: int, current_user: models.User = Depends(auth.g
     
     return {"message": "Dictionary activated successfully."}
 
+@app.get("/api/dictionaries/{dict_id}/download")
+def download_dictionary(dict_id: int, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    d = db.query(models.Dictionary).filter(models.Dictionary.id == dict_id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Dictionary not found.")
+        
+    file_path = os.path.join(DICTIONARY_STORAGE_PATH, d.filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Dictionary file not found on disk.")
+        
+    return FileResponse(
+        file_path, 
+        media_type="text/csv", 
+        filename=d.filename.split('_', 1)[1] if '_' in d.filename else d.filename
+    )
+
 @app.delete("/api/dictionaries/{dict_id}")
 def delete_dictionary(dict_id: int, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
     d = db.query(models.Dictionary).filter(models.Dictionary.id == dict_id).first()
@@ -464,5 +487,160 @@ def dictionary_stats(current_user: models.User = Depends(auth.get_current_user),
     ).group_by(models.DictionaryUsage.dictionary_id).all()
     
     return {"stats": [{"dictionary_id": s.dictionary_id, "usage_count": s.usage_count} for s in stats]}
+
+# =======================================================
+# Automated Dictionary Generation (Wizard)
+# =======================================================
+
+def load_robust_df(content, filename):
+    """Robustly load CSV or Excel, handling headers and encodings."""
+    is_csv = filename.endswith('.csv')
+    if is_csv:
+        for enc in ['utf-8', 'latin1', 'utf-8-sig']:
+            try:
+                # Try skipping 9 rows (common in this project's data)
+                df = pd.read_csv(io.BytesIO(content), encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str, skiprows=9)
+                if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns:
+                    return df
+                # Fallback to no skip
+                df = pd.read_csv(io.BytesIO(content), encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str)
+                if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns:
+                    return df
+            except Exception:
+                continue
+        # Last resort
+        return pd.read_csv(io.BytesIO(content), encoding='utf-8', on_bad_lines='skip', low_memory=False, dtype=str)
+    else:
+        try:
+            df = pd.read_excel(io.BytesIO(content), dtype=str, skiprows=9)
+            if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns:
+                return df
+            return pd.read_excel(io.BytesIO(content), dtype=str)
+        except Exception:
+            return pd.read_excel(io.BytesIO(content), dtype=str)
+
+@app.post("/api/dictionaries/generate/step1")
+async def generate_draft(
+    file: UploadFile = File(...),
+    use_llm: bool = Query(True),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Step 1: Raw Upload -> Draft Excel with 3 sheets"""
+    if not file.filename.endswith(('.xlsx', '.csv')):
+        raise HTTPException(status_code=400, detail="Invalid file format. Please upload .xlsx or .csv")
+        
+    try:
+        content = await file.read()
+        raw_df = load_robust_df(content, file.filename)
+            
+        generator = DictionaryGenerator(groq_api_key=os.environ.get("GROQ_API_KEY"))
+        
+        # Run clustering in a separate thread
+        draft_df, processed_raw_df = await asyncio.to_thread(
+            generator.generate_draft_taxonomy, 
+            raw_df, 
+            use_llm=use_llm
+        )
+        
+        # Convert draft_df to Excel in memory with 3 sheets (to match original repo)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Sheet 1: Phân loại (để review)
+            df_export = draft_df[['Keyword', 'Mã HS', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Cluster_ID']].copy()
+            df_export.to_excel(writer, sheet_name='Phân loại', index=False)
+            
+            # Sheet 2: Chi tiết (để tham khảo)
+            draft_df.to_excel(writer, sheet_name='Chi tiết Cluster', index=False)
+            
+            # Sheet 3: Dữ liệu raw đã gán cluster
+            df_raw_export = processed_raw_df[['HS_Code', 'Detailed_Product', '_clean', '_cluster']].copy()
+            df_raw_export.columns = ['Mã HS', 'Tên hàng gốc', 'Đã làm sạch', 'Cluster_ID']
+            df_raw_export.to_excel(writer, sheet_name='Raw + Cluster', index=False)
+            
+        output.seek(0)
+        
+        headers = {
+            'Content-Disposition': f'attachment; filename="draft_taxonomy_{uuid.uuid4().hex[:8]}.xlsx"'
+        }
+        return StreamingResponse(
+            output, 
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating draft: {str(e)}")
+
+@app.post("/api/dictionaries/generate/step2")
+async def finalize_dictionary(
+    raw_file: UploadFile = File(...),
+    draft_file: UploadFile = File(...),
+    dictionary_name: str = Query(...),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """Step 2: Draft + Raw Upload -> Final Dictionary CSV"""
+    if not dictionary_name.endswith('.csv'):
+        dictionary_name += '.csv'
+        
+    print(f"DEBUG: Finalizing dictionary {dictionary_name} for user {current_user.username}")
+    try:
+        # Read raw file using robust loader
+        raw_content = await raw_file.read()
+        raw_df = load_robust_df(raw_content, raw_file.filename)
+        print(f"DEBUG: Raw file loaded: {len(raw_df)} rows")
+            
+        # Read reviewed draft file
+        draft_content = await draft_file.read()
+        # Sheet 1: Taxonomy to be finalized
+        draft_df = pd.read_excel(io.BytesIO(draft_content), sheet_name=0, dtype=str)
+        print(f"DEBUG: Draft taxonomy loaded: {len(draft_df)} groups")
+        
+        # Try to read Sheet 3 (Raw + Cluster) from the SAME draft file
+        # This is where the Cluster_ID mapping is stored
+        try:
+            raw_with_cluster_df = pd.read_excel(io.BytesIO(draft_content), sheet_name='Raw + Cluster', dtype=str)
+            print(f"DEBUG: Cluster mapping found in draft file: {len(raw_with_cluster_df)} rows")
+        except Exception as e:
+            print(f"WARNING: Could not find 'Raw + Cluster' sheet in draft: {e}. Falling back to regex matching.")
+            raw_with_cluster_df = None
+        
+        generator = DictionaryGenerator(groq_api_key=os.environ.get("GROQ_API_KEY"))
+        
+        # Extract keywords
+        # We pass raw_with_cluster_df instead of original raw_df if we found the mapping
+        final_dict_df = await asyncio.to_thread(
+            generator.extract_keywords_for_taxonomy, 
+            draft_df, 
+            raw_with_cluster_df if raw_with_cluster_df is not None else raw_df
+        )
+        
+        # Save to storage
+        file_id = str(uuid.uuid4())
+        filename = f"{file_id}_{dictionary_name}"
+        out_path = os.path.join(DICTIONARY_STORAGE_PATH, filename)
+        
+        final_dict_df.to_csv(out_path, index=False, encoding='utf-8-sig')
+        print(f"DEBUG: Dictionary saved to {out_path}")
+        
+        # Register in database
+        new_dict = models.Dictionary(
+            filename=filename,
+            user_id=current_user.id,
+            is_active=False
+        )
+        db.add(new_dict)
+        db.commit()
+        db.refresh(new_dict)
+        
+        return {
+            "id": new_dict.id, 
+            "filename": dictionary_name, 
+            "message": "Dictionary generated and saved successfully."
+        }
+    except Exception as e:
+        print(f"ERROR in Step 2: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error finalizing dictionary: {str(e)}")
 
 

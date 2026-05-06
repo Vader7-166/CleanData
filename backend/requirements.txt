@@ -16,3 +16,6 @@ bcrypt
 python-jose[cryptography]
 psycopg2-binary
 pyahocorasick
+pyvi
+groq
+python-dotenv

@@ -6,7 +6,7 @@
 # Cần làm
 [x]Cho phép upload dict và lưu trữ các bộ từ điển đó để sử dụng
 [ ]Nghiên cứu tối ưu việc lưu trữ model việc cập nhật model không cần compose lại trên docker giúp tiết kiệm thời gian.
-[ ]Tạo tính năng tạo dict dựa trên code base của Thế. Cho phép người dùng tạo bộ dict dựa trên file raw.
+[x]Tạo tính năng tạo dict dựa trên code base của Thế. Cho phép người dùng tạo bộ dict dựa trên file raw.
 
 # Chi tiết tính năng dashboard
 [x]Cho phép xem preview các file đã upload
