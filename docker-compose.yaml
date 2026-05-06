@@ -1,0 +1,50 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: data_cleaning_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./working:/working
+      - ./backend:/app/backend
+      - ./dataset:/app/dataset
+    environment:
+      - MODEL_PATH=/working
+      - DATABASE_URL=postgresql://user:password@db:5432/cleandata
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    depends_on:
+      - db
+    # Cài đặt nóng các thư viện missing và khởi động server
+    command: >
+      sh -c "pip install --no-cache-dir scikit-learn psycopg2-binary pyahocorasick pyvi groq python-dotenv python-multipart openpyxl && 
+             uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  db:
+    image: postgres:15-alpine
+    container_name: data_cleaning_db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=cleandata
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: data_cleaning_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

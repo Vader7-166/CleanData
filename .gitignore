@@ -1,0 +1,44 @@
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Node / Frontend
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Data and Models
+# (Bỏ qua các file dữ liệu và thư mục chứa Model siêu nặng, tránh đẩy lên Git)
+working/
+*.csv
+*.xlsx
+*.xls
+temp_*
+cleaned_*
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Environment Variables
+.env
+.env.local
+
+# MacOS
+.DS_Store
+
+# IDEs / Code Editors
+.vscode/
+.idea/
+
+# Agent Artifacts
+.agent/
+scratch/
+.gemini/
+Create_Dictionary/
