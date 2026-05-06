@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 class DictionaryMatcher:
-    def __init__(self, dict_path, threshold=15):
+    def __init__(self, dict_path, threshold=5):
         if not dict_path:
             raise ValueError("dict_path is required")
         self.dict_path = dict_path
@@ -26,7 +26,7 @@ class DictionaryMatcher:
             "chính hãng", "chi tiết", "bộ phận", "công suất",
             "kích thước", "điện áp", "chất liệu", "nhôm", "nhựa", "hoạt động",
             "nsx", "co", "ltd", "industrial", "factory", "zhejiang", "zhongshan",
-            "mới 100", "model", "dạng", "loại", "có", "led", "đèn led", "đèn"
+            "mới 100", "model", "dạng", "loại"
         ]
         self.dict_mapping = []
         self.automaton = ahocorasick.Automaton()
@@ -90,9 +90,13 @@ class DictionaryMatcher:
                 # Add word boundary padding to ensure we match whole words
                 padded_kw = f" {kw} "
                 
-                score = len(kw.split())
+                # Dynamic scoring: longer phrases are exponentially more valuable
+                # 1 word = 1 pt, 2 words = 4 pts, 3 words = 9 pts
+                words = kw.split()
+                score = len(words) ** 2
+                
                 if any(hv in kw for hv in self.HIGH_VALUE_KEYWORDS):
-                    score = 20
+                    score = 25
                 elif any(kw == jk for jk in self.JUNK_KEYWORDS):
                     score = 0
                 

@@ -398,7 +398,10 @@ class DictionaryGenerator:
             cands.sort(key=lambda x: x[1], reverse=True)
             top = []
             for w, _ in cands:
-                if not any(w in x or x in w for x in top): top.append(w)
+                # Replace underscores with spaces for matcher compatibility
+                clean_w = w.replace('_', ' ')
+                if not any(clean_w in x or x in clean_w for x in top): 
+                    top.append(clean_w)
                 if len(top) >= top_n: break
             res[i] = ', '.join(top) if top else (fallback.get(i, '') if fallback else '')
         return res
