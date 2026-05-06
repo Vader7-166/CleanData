@@ -10,11 +10,10 @@ services:
       - ./working:/working
       - ./backend:/app/backend
       - ./dataset:/app/dataset
-    env_file:
-      - .env
     environment:
       - MODEL_PATH=/working
       - DATABASE_URL=postgresql://user:password@db:5432/cleandata
+      - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
       - db
     # Cài đặt nóng các thư viện missing và khởi động server
