@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 
-const API_BASE = "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 interface Job {
   id: string;
@@ -38,7 +38,7 @@ const Dashboard = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_BASE}/api/jobs`, {
+      const response = await fetch(`${API_URL}/api/jobs`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -67,7 +67,7 @@ const Dashboard = () => {
     
     if (job.status === 'done') {
       try {
-        const response = await fetch(`${API_BASE}/api/jobs/${job.id}/preview?limit=50`, {
+        const response = await fetch(`${API_URL}/api/jobs/${job.id}/preview?limit=50`, {
           headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
         if (response.ok) {
@@ -83,7 +83,7 @@ const Dashboard = () => {
   const deleteJob = async (jobId: string) => {
     if (!window.confirm("Are you sure you want to delete this job and its file?")) return;
     try {
-      const response = await fetch(`${API_BASE}/api/jobs/${jobId}`, {
+      const response = await fetch(`${API_URL}/api/jobs/${jobId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
@@ -186,7 +186,7 @@ const Dashboard = () => {
                           </Button>
                           {job.status === 'done' && (
                             <Button variant="ghost" size="icon" asChild>
-                              <a href={`${API_BASE}/api/jobs/${job.id}/download?token=${localStorage.getItem('token')}`}>
+                              <a href={`${API_URL}/api/jobs/${job.id}/download?token=${localStorage.getItem('token')}`}>
                                 <Download className="size-4" />
                               </a>
                             </Button>

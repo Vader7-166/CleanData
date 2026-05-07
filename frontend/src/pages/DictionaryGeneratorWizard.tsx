@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileDown, ArrowRight, CheckCircle, BrainCircuit, AlertCircle, Loader2, Sparkles, RefreshCw } from 'lucide-react';
+import { Upload, CheckCircle, BrainCircuit, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import usePersistedState from '../hooks/usePersistedState';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';

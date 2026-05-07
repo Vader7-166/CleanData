@@ -4,6 +4,8 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const Login = ({ setToken }: { setToken: (token: string) => void }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -21,7 +23,7 @@ const Login = ({ setToken }: { setToken: (token: string) => void }) => {
       formData.append('username', username);
       formData.append('password', password);
 
-      const res = await fetch('http://localhost:8000/api/auth/login', {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
