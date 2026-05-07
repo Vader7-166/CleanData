@@ -17,10 +17,14 @@ const Login = ({ setToken }: { setToken: (token: string) => void }) => {
     setError('');
 
     try {
+      const formData = new URLSearchParams();
+      formData.append('username', username);
+      formData.append('password', password);
+
       const res = await fetch('http://localhost:8000/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData
       });
       const data = await res.json();
       if (res.ok) {
@@ -28,7 +32,14 @@ const Login = ({ setToken }: { setToken: (token: string) => void }) => {
         setToken(data.access_token);
         navigate('/');
       } else {
-        setError(data.detail || 'Invalid credentials');
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Invalid credentials');
+        } else {
+          setError('Invalid credentials');
+        }
       }
     } catch (err) {
       setError('Connection to server failed');
