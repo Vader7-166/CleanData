@@ -79,8 +79,15 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
         setStep(2);
       } else {
         const data = await res.json();
-        console.error("Step 1 Failed data:", data);
-        setError(data.detail || 'Step 1 failed');
+        console.error("Error data:", data);
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Action failed');
+        } else {
+          setError('Action failed');
+        }
       }
     } catch (err) {
       console.error("Step 1 Exception:", err);
@@ -123,7 +130,14 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
         setTimeout(resetWizard, 3000);
       } else {
         console.error('Step 2 Error:', data);
-        setError(data.detail || 'Step 2 failed');
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Step 2 failed');
+        } else {
+          setError('Step 2 failed');
+        }
       }
     } catch (err) {
       console.error('Step 2 Exception:', err);

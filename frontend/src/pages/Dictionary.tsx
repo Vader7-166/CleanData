@@ -122,7 +122,14 @@ const Dictionary = () => {
         setFile(null);
         fetchDictionaries();
       } else {
-        setError(data.detail || 'Upload failed');
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Upload failed');
+        } else {
+          setError('Upload failed');
+        }
       }
     } catch (err) {
       setError('An error occurred during upload.');

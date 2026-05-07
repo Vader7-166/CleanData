@@ -32,7 +32,14 @@ const Register = () => {
       if (res.ok) {
         navigate('/auth/login');
       } else {
-        setError(data.detail || 'Registration failed');
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Registration failed');
+        } else {
+          setError('Registration failed');
+        }
       }
     } catch (err) {
       setError('Connection to server failed');
