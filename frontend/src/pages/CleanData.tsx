@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud, FileSpreadsheet, Download, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { UploadCloud, Download, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import usePersistedState from '../hooks/usePersistedState';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
-const API_BASE = "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const CleanData = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -29,7 +29,7 @@ const CleanData = () => {
     const token = localStorage.getItem('token');
     
     try {
-      const res = await fetch(`${API_BASE}/api/jobs/${jobId}/preview`, {
+      const res = await fetch(`${API_URL}/api/jobs/${jobId}/preview`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -47,7 +47,7 @@ const CleanData = () => {
   };
 
   const connectToStream = (jobId: string, token: string) => {
-    const evtSource = new EventSource(`${API_BASE}/stream/${jobId}?token=${token}`);
+    const evtSource = new EventSource(`${API_URL}/stream/${jobId}?token=${token}`);
       
     evtSource.onmessage = async (e) => {
       const eventData = JSON.parse(e.data);
@@ -96,7 +96,7 @@ const CleanData = () => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/upload`, {
+      const response = await fetch(`${API_URL}/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -121,7 +121,7 @@ const CleanData = () => {
 
   const fetchResults = async (jobId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/jobs/${jobId}/preview`, {
+      const response = await fetch(`${API_URL}/api/jobs/${jobId}/preview`, {
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
       if (!response.ok) throw new Error("Failed to load preview.");
@@ -251,7 +251,7 @@ const CleanData = () => {
             <CardHeader className="flex flex-row items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="size-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-600">
-                  <CheckCircle2 className="size-6" />
+                  <CheckCircle className="size-6" />
                 </div>
                 <div>
                   <CardTitle className="text-green-700">Success!</CardTitle>
@@ -260,7 +260,7 @@ const CleanData = () => {
               </div>
               <div className="flex gap-3">
                 <Button variant="default" className="bg-green-600 hover:bg-green-700" asChild>
-                  <a href={`${API_BASE}/api/jobs/${result.jobId}/download?token=${localStorage.getItem('token')}`}>
+                  <a href={`${API_URL}/api/jobs/${result.jobId}/download?token=${localStorage.getItem('token')}`}>
                     <Download className="size-4 mr-2" />
                     Download Result
                   </a>
