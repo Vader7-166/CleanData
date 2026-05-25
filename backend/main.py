@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, status, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ import asyncio
 import time
 import io
 import traceback
+from typing import List
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -37,6 +38,25 @@ try:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE dictionaries ADD COLUMN is_active BOOLEAN DEFAULT FALSE"))
 except Exception as e:
+    pass
+
+# Migration: add hs_code_prefixes to dictionaries
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE dictionaries ADD COLUMN hs_code_prefixes TEXT"))
+except Exception:
+    pass
+
+# Migration: add batch_id and transaction_type to processing_jobs
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN batch_id TEXT"))
+except Exception:
+    pass
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE processing_jobs ADD COLUMN transaction_type TEXT"))
+except Exception:
     pass
 
 models.Base.metadata.create_all(bind=engine)
@@ -84,50 +104,112 @@ def cleanup_old_files(user_id: int, db: Session):
         for j in jobs_to_delete:
             out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{j.id}_{j.filename}")
             remove_file(out_path)
+            
+            # Delete dictionary usage records referencing this job
+            db.query(models.DictionaryUsage).filter(models.DictionaryUsage.job_id == j.id).delete()
+            
             db.delete(j)
             if j.id in jobs:
                 del jobs[j.id]
         db.commit()
 
+import json
+
+async def process_batch(batch_id: str, tasks: list):
+    for task in tasks:
+        job = jobs.get(task['job_id'])
+        if job:
+            job["status"] = "processing"
+            db_sync = database.SessionLocal()
+            db_job = db_sync.query(models.ProcessingJob).filter(models.ProcessingJob.id == task['job_id']).first()
+            if db_job:
+                db_job.status = "processing"
+                db_sync.commit()
+            db_sync.close()
+        await process_job(task['job_id'], task['temp_path'], task['filename'])
+    
+    # Mark batch as done
+    db_sync = database.SessionLocal()
+    db_batch = db_sync.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if db_batch:
+        db_batch.status = "done"
+        db_sync.commit()
+    db_sync.close()
+
 @app.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...), 
+async def upload_files(
+    files: List[UploadFile] = File(...), 
+    transaction_types: str = Form(None),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db)
 ):
-    if not file.filename.endswith(('.csv', '.xlsx')):
-         raise HTTPException(status_code=400, detail="Invalid file format.")
-         
     active_dict = db.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
     if not active_dict:
         raise HTTPException(
             status_code=400, 
             detail="Không có bộ từ điển nào được kích hoạt. Vui lòng upload và chọn một bộ từ điển trước khi Clean Data."
         )
-    
-    # Retention policy handles cleanup automatically, no block needed here.
-    user_jobs_count = db.query(models.ProcessingJob).filter(models.ProcessingJob.user_id == current_user.id).count()
 
-    job_id = str(uuid.uuid4())
-    temp_path = f"temp_{job_id}_{file.filename}"
-    
-    new_job = models.ProcessingJob(id=job_id, filename=file.filename, status="processing", user_id=current_user.id)
-    db.add(new_job)
+    types_map = {}
+    if transaction_types:
+        try:
+            types_map = json.loads(transaction_types)
+        except Exception:
+            pass
+
+    batch_id = str(uuid.uuid4())
+    new_batch = models.Batch(id=batch_id, user_id=current_user.id, status="processing")
+    db.add(new_batch)
+    db.commit()
+
+    tasks_to_run = []
+    response_jobs = []
+
+    for file in files:
+        if not file.filename.endswith(('.csv', '.xlsx')):
+            continue
+            
+        job_id = str(uuid.uuid4())
+        temp_path = f"temp_{job_id}_{file.filename}"
+        
+        t_type = types_map.get(file.filename)
+        
+        new_job = models.ProcessingJob(
+            id=job_id, 
+            filename=file.filename, 
+            status="pending", 
+            user_id=current_user.id,
+            batch_id=batch_id,
+            transaction_type=t_type
+        )
+        db.add(new_job)
+        
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        jobs[job_id] = {
+            "status": "pending",
+            "file_path": None,
+            "preview": None,
+            "error": None,
+            "transaction_type": t_type,
+            "event_queue": asyncio.Queue()
+        }
+        
+        tasks_to_run.append({
+            "job_id": job_id,
+            "temp_path": temp_path,
+            "filename": file.filename
+        })
+        response_jobs.append(job_id)
+        
     db.commit()
     
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    if not tasks_to_run:
+        raise HTTPException(status_code=400, detail="No valid CSV or Excel files found.")
         
-    jobs[job_id] = {
-        "status": "processing",
-        "file_path": None,
-        "preview": None,
-        "error": None,
-        "event_queue": asyncio.Queue()
-    }
-    
-    asyncio.create_task(process_job(job_id, temp_path, file.filename))
-    return {"job_id": job_id, "message": "Upload successful, processing started."}
+    asyncio.create_task(process_batch(batch_id, tasks_to_run))
+    return {"batch_id": batch_id, "job_ids": response_jobs, "message": f"Upload successful, {len(tasks_to_run)} files queued."}
 
 async def process_job(job_id: str, temp_path: str, original_filename: str):
     job = jobs.get(job_id)
@@ -167,13 +249,40 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
         df = await asyncio.to_thread(load_dataframe, temp_path, is_csv)
             
         db_sync = database.SessionLocal()
-        active_dict = db_sync.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
-        dict_path = os.path.join(DICTIONARY_STORAGE_PATH, active_dict.filename) if active_dict else None
-        dict_id = active_dict.id if active_dict else None
+        
+        # Context-Aware Dictionary Routing
+        selected_dict = None
+        if 'HS_Code' in df.columns:
+            # Extract unique 4-digit prefixes from the raw file
+            hs_codes = df['HS_Code'].dropna().astype(str)
+            file_prefixes = set()
+            for code in hs_codes:
+                clean = ''.join(c for c in code if c.isdigit())
+                if len(clean) >= 4:
+                    file_prefixes.add(clean[:4])
+                    
+            if file_prefixes:
+                # Find best matching dictionary
+                dictionaries = db_sync.query(models.Dictionary).all()
+                best_match_count = 0
+                for d in dictionaries:
+                    if d.hs_code_prefixes:
+                        d_prefixes = set(d.hs_code_prefixes.split(','))
+                        overlap = len(file_prefixes.intersection(d_prefixes))
+                        if overlap > best_match_count:
+                            best_match_count = overlap
+                            selected_dict = d
+                            
+        # Fall back to active dictionary if no match found
+        if not selected_dict:
+            selected_dict = db_sync.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
+            
+        dict_path = os.path.join(DICTIONARY_STORAGE_PATH, selected_dict.filename) if selected_dict else None
+        dict_id = selected_dict.id if selected_dict else None
         db_sync.close()
         
         cleaner = get_cleaner()
-        result_df = await cleaner.process_async(df, progress_callback=progress_callback, dict_path=dict_path)
+        result_df = await cleaner.process_async(df, progress_callback=progress_callback, dict_path=dict_path, transaction_type=job.get("transaction_type"))
         
         # Apply column reordering logic
         try:
@@ -181,7 +290,7 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             sample_df = pd.read_csv(sample_path, nrows=0)
             expected_cols = sample_df.columns.tolist()
         except Exception:
-            expected_cols = ['Ngày', 'Mã HS', 'Công ty NK', 'Tên hàng', 'DVT', 'Lượng', 'Giá trị', 'Đơn giá', 'Hãng', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Công suất', 'Quốc gia', 'Châu lục', 'MDSD', 'Công ty XK', 'Incoterms', 'Method_of_Payment', 'Công suất.1', 'Loại 1', 'Loại 2', 'Năm']
+            expected_cols = ['Ngày', 'Tháng', 'Mã HS', 'Công ty NK', 'Tên hàng', 'DVT', 'Lượng', 'Giá trị', 'Đơn giá', 'Hãng', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Công suất', 'Quốc gia', 'Châu lục', 'MDSD', 'Công ty XK', 'Incoterms', 'Phương thức thanh toán', 'Loại 1', 'Loại 2', 'Năm', 'Loại giao dịch']
 
         trang_thai = result_df['Trạng Thái'] if 'Trạng Thái' in result_df.columns else None
         do_tu_tin = result_df['Độ Tự Tin (%)'] if 'Độ Tự Tin (%)' in result_df.columns else None
@@ -294,6 +403,36 @@ def get_job_preview(job_id: str, skip: int = 0, limit: int = 100, current_user: 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/batches/{batch_id}")
+def get_batch_status(batch_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    batch = db.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if not batch or batch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access Denied")
+        
+    db_jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.batch_id == batch_id).all()
+    job_statuses = []
+    for j in db_jobs:
+        live_job = jobs.get(j.id)
+        current_status = live_job["status"] if live_job else j.status
+        job_statuses.append({
+            "id": j.id,
+            "filename": j.filename,
+            "status": current_status,
+            "transaction_type": j.transaction_type,
+            "error_message": j.error_message
+        })
+        
+    return {
+        "id": batch.id,
+        "status": batch.status,
+        "created_at": batch.created_at,
+        "jobs": job_statuses
+    }
+
+import zipfile
+import io
+from fastapi.responses import StreamingResponse
+
 @app.get("/api/jobs/{job_id}/download")
 def download_result(job_id: str, current_user: models.User = Depends(get_user_from_token_query), db: Session = Depends(database.get_db)):
     db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
@@ -310,6 +449,120 @@ def download_result(job_id: str, current_user: models.User = Depends(get_user_fr
         filename=f"cleaned_{db_job.filename}"
     )
 
+@app.get("/api/batches/{batch_id}/download-merged")
+def download_batch_merged(batch_id: str, current_user: models.User = Depends(get_user_from_token_query), db: Session = Depends(database.get_db)):
+    batch = db.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if not batch or batch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access Denied")
+        
+    jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.batch_id == batch_id, models.ProcessingJob.status == "done").all()
+    if not jobs:
+        raise HTTPException(status_code=404, detail="No completed jobs found for this batch")
+        
+    all_dfs = []
+    for job in jobs:
+        path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job.id}_{job.filename}")
+        if os.path.exists(path):
+            try:
+                df = pd.read_excel(path) if path.endswith('.xlsx') else pd.read_csv(path)
+                df['Tên file nguồn'] = job.filename
+                all_dfs.append(df)
+            except Exception:
+                pass
+            
+    if not all_dfs:
+        raise HTTPException(status_code=404, detail="Files not found on disk")
+        
+    merged_df = pd.concat(all_dfs, ignore_index=True)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        merged_df.to_excel(writer, index=False)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=batch_merged_{batch_id}.xlsx"}
+    )
+
+@app.get("/api/batches/{batch_id}/download-zip")
+def download_batch_zip(batch_id: str, current_user: models.User = Depends(get_user_from_token_query), db: Session = Depends(database.get_db)):
+    batch = db.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if not batch or batch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access Denied")
+        
+    jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.batch_id == batch_id, models.ProcessingJob.status == "done").all()
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for job in jobs:
+            path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job.id}_{job.filename}")
+            if os.path.exists(path):
+                zip_file.write(path, arcname=f"cleaned_{job.filename}")
+                
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=batch_{batch_id}.zip"}
+    )
+
+@app.get("/api/batches/{batch_id}/insights")
+def batch_insights(batch_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    batch = db.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if not batch or batch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access Denied")
+        
+    jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.batch_id == batch_id, models.ProcessingJob.status == "done").all()
+    
+    if not jobs:
+        return {"product_lines": [], "nc_lk_ratio": [], "top_companies": []}
+        
+    all_dfs = []
+    for job in jobs:
+        path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job.id}_{job.filename}")
+        if os.path.exists(path):
+            try:
+                # pandas usecols requires columns to exist. If a column is missing, it will throw an error.
+                # So we read all and then filter.
+                df = pd.read_excel(path) if path.endswith('.xlsx') else pd.read_csv(path)
+                keep_cols = [c for c in ['Dòng SP', 'Loại', 'Công ty NK', 'Công ty XK', 'Giá trị', 'Loại giao dịch'] if c in df.columns]
+                df = df[keep_cols]
+                all_dfs.append(df)
+            except Exception:
+                pass
+            
+    if not all_dfs:
+         return {"product_lines": [], "nc_lk_ratio": [], "top_companies": []}
+         
+    merged_df = pd.concat(all_dfs, ignore_index=True)
+    
+    pl_counts = merged_df['Dòng SP'].value_counts().reset_index() if 'Dòng SP' in merged_df.columns else pd.DataFrame(columns=['name', 'value'])
+    if not pl_counts.empty: pl_counts.columns = ['name', 'value']
+    
+    nc_lk_counts = merged_df['Loại'].value_counts().reset_index() if 'Loại' in merged_df.columns else pd.DataFrame(columns=['name', 'value'])
+    if not nc_lk_counts.empty: nc_lk_counts.columns = ['name', 'value']
+    
+    company_vals = []
+    for _, row in merged_df.iterrows():
+        comp = row.get('Công ty NK') if row.get('Loại giao dịch') == 'Nhập khẩu' else row.get('Công ty XK')
+        if pd.notna(comp) and comp:
+            val = pd.to_numeric(row.get('Giá trị'), errors='coerce')
+            if pd.notna(val):
+                company_vals.append({'name': comp, 'value': val})
+                
+    comp_df = pd.DataFrame(company_vals)
+    top_comps = []
+    if not comp_df.empty:
+        top_comps = comp_df.groupby('name')['value'].sum().sort_values(ascending=False).head(5).reset_index().to_dict('records')
+        
+    return {
+        "product_lines": pl_counts.to_dict('records') if not pl_counts.empty else [],
+        "nc_lk_ratio": nc_lk_counts.to_dict('records') if not nc_lk_counts.empty else [],
+        "top_companies": top_comps
+    }
+
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
     db_job = db.query(models.ProcessingJob).filter(models.ProcessingJob.id == job_id).first()
@@ -318,6 +571,10 @@ def delete_job(job_id: str, current_user: models.User = Depends(auth.get_current
         
     out_path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job_id}_{db_job.filename}")
     remove_file(out_path)
+    
+    # Delete dictionary usage records referencing this job
+    db.query(models.DictionaryUsage).filter(models.DictionaryUsage.job_id == job_id).delete()
+    
     db.delete(db_job)
     db.commit()
     if job_id in jobs:
@@ -409,16 +666,32 @@ async def upload_dictionary(
     count = db.query(models.Dictionary).count()
     is_active = (count == 0)
     
+    # Auto-extract HS code prefixes from the dictionary CSV
+    hs_prefixes_str = None
+    try:
+        df_dict = pd.read_csv(out_path, encoding='utf-8-sig', usecols=['Mã HS'])
+        hs_codes = df_dict['Mã HS'].dropna().astype(str)
+        prefixes = set()
+        for code in hs_codes:
+            clean = ''.join(c for c in code if c.isdigit())
+            if len(clean) >= 4:
+                prefixes.add(clean[:4])
+        if prefixes:
+            hs_prefixes_str = ','.join(sorted(prefixes))
+    except Exception:
+        pass  # Column may not exist in all dictionaries
+    
     new_dict = models.Dictionary(
         filename=filename,
         user_id=current_user.id,
-        is_active=is_active
+        is_active=is_active,
+        hs_code_prefixes=hs_prefixes_str
     )
     db.add(new_dict)
     db.commit()
     db.refresh(new_dict)
     
-    return {"id": new_dict.id, "filename": file.filename, "is_active": new_dict.is_active, "message": "Uploaded successfully."}
+    return {"id": new_dict.id, "filename": file.filename, "is_active": new_dict.is_active, "hs_code_prefixes": new_dict.hs_code_prefixes, "message": "Uploaded successfully."}
 
 @app.get("/api/dictionaries")
 def list_dictionaries(current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
