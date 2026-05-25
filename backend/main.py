@@ -489,6 +489,285 @@ def dictionary_stats(current_user: models.User = Depends(auth.get_current_user),
     return {"stats": [{"dictionary_id": s.dictionary_id, "usage_count": s.usage_count} for s in stats]}
 
 # =======================================================
+# HS Taxonomy Management Endpoints
+# =======================================================
+
+class HSTaxonomyCreate(BaseModel):
+    hs_code_prefix: str
+    dong_sp: str
+    industry_name: str
+    default_type: str  # "NC" or "LK"
+
+class HSTaxonomyUpdate(BaseModel):
+    dong_sp: str | None = None
+    industry_name: str | None = None
+    default_type: str | None = None
+
+class HSTaxonomyBulkItem(BaseModel):
+    hs_code_prefix: str
+    dong_sp: str
+    industry_name: str
+    default_type: str
+
+class HSTaxonomyBulkSave(BaseModel):
+    items: list[HSTaxonomyBulkItem]
+
+class HSCodeCheckRequest(BaseModel):
+    hs_codes: list[str]
+
+@app.get("/api/taxonomy")
+def list_taxonomy(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    records = db.query(models.HSTaxonomy).order_by(models.HSTaxonomy.hs_code_prefix).all()
+    return {"taxonomy": [
+        {
+            "id": r.id,
+            "hs_code_prefix": r.hs_code_prefix,
+            "dong_sp": r.dong_sp,
+            "industry_name": r.industry_name,
+            "default_type": r.default_type,
+            "source": r.source,
+            "created_at": r.created_at,
+            "updated_at": r.updated_at,
+        }
+        for r in records
+    ]}
+
+@app.post("/api/taxonomy")
+def create_taxonomy(
+    data: HSTaxonomyCreate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    import re as _re
+    clean_code = _re.sub(r'\D', '', data.hs_code_prefix)
+    if not clean_code:
+        raise HTTPException(status_code=400, detail="Invalid HS code prefix.")
+    if data.default_type not in ('NC', 'LK'):
+        raise HTTPException(status_code=400, detail="default_type must be 'NC' or 'LK'.")
+    
+    existing = db.query(models.HSTaxonomy).filter(models.HSTaxonomy.hs_code_prefix == clean_code).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"HS code prefix '{clean_code}' already exists.")
+    
+    record = models.HSTaxonomy(
+        hs_code_prefix=clean_code,
+        dong_sp=data.dong_sp,
+        industry_name=data.industry_name,
+        default_type=data.default_type,
+        source='user_input'
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return {"id": record.id, "message": "Created successfully."}
+
+@app.put("/api/taxonomy/{taxonomy_id}")
+def update_taxonomy(
+    taxonomy_id: int,
+    data: HSTaxonomyUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    record = db.query(models.HSTaxonomy).filter(models.HSTaxonomy.id == taxonomy_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Taxonomy record not found.")
+    
+    if data.dong_sp is not None:
+        record.dong_sp = data.dong_sp
+    if data.industry_name is not None:
+        record.industry_name = data.industry_name
+    if data.default_type is not None:
+        if data.default_type not in ('NC', 'LK'):
+            raise HTTPException(status_code=400, detail="default_type must be 'NC' or 'LK'.")
+        record.default_type = data.default_type
+    
+    db.commit()
+    return {"message": "Updated successfully."}
+
+@app.delete("/api/taxonomy/{taxonomy_id}")
+def delete_taxonomy(
+    taxonomy_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    record = db.query(models.HSTaxonomy).filter(models.HSTaxonomy.id == taxonomy_id).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Taxonomy record not found.")
+    
+    db.delete(record)
+    db.commit()
+    return {"message": "Deleted successfully."}
+
+@app.post("/api/taxonomy/check-hs-codes")
+async def check_hs_codes(
+    data: HSCodeCheckRequest,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Accept a list of raw HS codes, query the DB (longest-prefix matching),
+    trigger the crawler for missing ones, and return resolved + unresolved lists.
+    """
+    import re as _re
+    from .core.crawler import crawl_hs_code
+
+    resolved = []
+    unresolved = []
+
+    for raw_code in data.hs_codes:
+        clean_code = _re.sub(r'\D', '', str(raw_code))
+        if not clean_code or len(clean_code) < 4:
+            continue
+
+        # Try longest-prefix matching in DB
+        match = None
+        for length in [len(clean_code), 10, 8, 6, 4]:
+            if length > len(clean_code):
+                continue
+            prefix = clean_code[:length]
+            match = db.query(models.HSTaxonomy).filter(
+                models.HSTaxonomy.hs_code_prefix == prefix
+            ).first()
+            if match:
+                break
+
+        if match:
+            resolved.append({
+                "hs_code": clean_code,
+                "dong_sp": match.dong_sp,
+                "industry_name": match.industry_name,
+                "default_type": match.default_type,
+                "source": match.source,
+            })
+            continue
+
+        # Try online crawler
+        try:
+            crawl_result = await crawl_hs_code(clean_code)
+            if crawl_result:
+                # Save to DB
+                new_record = models.HSTaxonomy(
+                    hs_code_prefix=crawl_result['hs_code_prefix'],
+                    dong_sp=crawl_result['dong_sp'],
+                    industry_name=crawl_result['industry_name'],
+                    default_type=crawl_result['default_type'],
+                    source='crawled'
+                )
+                db.add(new_record)
+                db.commit()
+
+                resolved.append({
+                    "hs_code": clean_code,
+                    "dong_sp": crawl_result['dong_sp'],
+                    "industry_name": crawl_result['industry_name'],
+                    "default_type": crawl_result['default_type'],
+                    "source": "crawled",
+                })
+                continue
+        except Exception as e:
+            print(f"DEBUG: Crawler failed for {clean_code}: {e}")
+
+        # Unresolved
+        unresolved.append({"hs_code": clean_code})
+
+    return {"resolved": resolved, "unresolved": unresolved}
+
+@app.post("/api/taxonomy/bulk-save")
+def bulk_save_taxonomy(
+    data: HSTaxonomyBulkSave,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """Save multiple taxonomy records from manual user input (wizard interception)."""
+    import re as _re
+    saved = 0
+    for item in data.items:
+        clean_code = _re.sub(r'\D', '', item.hs_code_prefix)
+        if not clean_code:
+            continue
+        if item.default_type not in ('NC', 'LK'):
+            continue
+
+        existing = db.query(models.HSTaxonomy).filter(
+            models.HSTaxonomy.hs_code_prefix == clean_code
+        ).first()
+        if existing:
+            existing.dong_sp = item.dong_sp
+            existing.industry_name = item.industry_name
+            existing.default_type = item.default_type
+            existing.source = 'user_input'
+        else:
+            record = models.HSTaxonomy(
+                hs_code_prefix=clean_code,
+                dong_sp=item.dong_sp,
+                industry_name=item.industry_name,
+                default_type=item.default_type,
+                source='user_input'
+            )
+            db.add(record)
+        saved += 1
+
+    db.commit()
+    return {"message": f"Saved {saved} taxonomy records.", "count": saved}
+
+@app.post("/api/taxonomy/bulk-upload")
+async def bulk_upload_taxonomy(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    """Bulk import taxonomy from CSV/Excel with columns: hs_code_prefix, dong_sp, industry_name, default_type."""
+    import re as _re
+    content = await file.read()
+    
+    try:
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content), dtype=str)
+        else:
+            df = pd.read_excel(io.BytesIO(content), dtype=str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+
+    required_cols = ['hs_code_prefix', 'dong_sp', 'industry_name', 'default_type']
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing required columns: {missing}")
+
+    saved = 0
+    for _, row in df.iterrows():
+        clean_code = _re.sub(r'\D', '', str(row['hs_code_prefix']))
+        if not clean_code:
+            continue
+        d_type = str(row['default_type']).strip().upper()
+        if d_type not in ('NC', 'LK'):
+            continue
+
+        existing = db.query(models.HSTaxonomy).filter(
+            models.HSTaxonomy.hs_code_prefix == clean_code
+        ).first()
+        if existing:
+            existing.dong_sp = str(row['dong_sp'])
+            existing.industry_name = str(row['industry_name'])
+            existing.default_type = d_type
+            existing.source = 'user_input'
+        else:
+            record = models.HSTaxonomy(
+                hs_code_prefix=clean_code,
+                dong_sp=str(row['dong_sp']),
+                industry_name=str(row['industry_name']),
+                default_type=d_type,
+                source='user_input'
+            )
+            db.add(record)
+        saved += 1
+
+    db.commit()
+    return {"message": f"Imported {saved} taxonomy records.", "count": saved}
+
+# =======================================================
 # Automated Dictionary Generation (Wizard)
 # =======================================================
 
@@ -519,6 +798,24 @@ def load_robust_df(content, filename):
         except Exception:
             return pd.read_excel(io.BytesIO(content), dtype=str)
 
+
+def _load_db_taxonomy():
+    """Load all HSTaxonomy records from DB as a list of dicts."""
+    db = database.SessionLocal()
+    try:
+        records = db.query(models.HSTaxonomy).all()
+        return [
+            {
+                'hs_code_prefix': r.hs_code_prefix,
+                'dong_sp': r.dong_sp,
+                'industry_name': r.industry_name,
+                'default_type': r.default_type,
+            }
+            for r in records
+        ] if records else None
+    finally:
+        db.close()
+
 @app.post("/api/dictionaries/generate/step1")
 async def generate_draft(
     file: UploadFile = File(...),
@@ -533,7 +830,10 @@ async def generate_draft(
         content = await file.read()
         raw_df = load_robust_df(content, file.filename)
             
-        generator = DictionaryGenerator(groq_api_key=os.environ.get("GROQ_API_KEY"))
+        generator = DictionaryGenerator(
+            deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            db_taxonomy=_load_db_taxonomy()
+        )
         
         # Run clustering in a separate thread
         draft_df, processed_raw_df = await asyncio.to_thread(
@@ -605,7 +905,10 @@ async def finalize_dictionary(
             print(f"WARNING: Could not find 'Raw + Cluster' sheet in draft: {e}. Falling back to regex matching.")
             raw_with_cluster_df = None
         
-        generator = DictionaryGenerator(groq_api_key=os.environ.get("GROQ_API_KEY"))
+        generator = DictionaryGenerator(
+            deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            db_taxonomy=_load_db_taxonomy()
+        )
         
         # Extract keywords
         # We pass raw_with_cluster_df instead of original raw_df if we found the mapping

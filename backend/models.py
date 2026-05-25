@@ -53,3 +53,15 @@ class ProcessingJob(Base):
     
     owner = relationship("User", back_populates="jobs")
     dictionary = relationship("Dictionary")
+
+class HSTaxonomy(Base):
+    __tablename__ = "hs_taxonomy"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    hs_code_prefix = Column(String, unique=True, index=True, nullable=False)
+    dong_sp = Column(String, nullable=False)  # Product Line e.g. "SP ĐÈN/BÓNG ĐÈN"
+    industry_name = Column(String, nullable=False)  # Lớp 1 e.g. "Bóng đèn LED"
+    default_type = Column(String, nullable=False)  # "NC" or "LK"
+    source = Column(String, default='system')  # "system", "crawled", "user_input"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

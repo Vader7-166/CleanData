@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import CleanData from './pages/CleanData';
 import Dictionary from './pages/Dictionary';
 import DictionaryGenerator from './pages/DictionaryGenerator';
+import HSTaxonomy from './pages/HSTaxonomy';
 
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
@@ -33,6 +34,7 @@ function App() {
           <Route path="clean" element={<CleanData />} />
           <Route path="dictionary" element={<Dictionary />} />
           <Route path="dictionary/generate" element={<DictionaryGenerator />} />
+          <Route path="taxonomy" element={<HSTaxonomy />} />
         </Route>
       </Routes>
     </Router>

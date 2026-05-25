@@ -1,4 +1,4 @@
-import { LayoutDashboard, FileSpreadsheet, BookOpen, Wand2, LogOut } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, BookOpen, Wand2, Database, LogOut } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 const menuItems = [
@@ -6,6 +6,7 @@ const menuItems = [
   { icon: FileSpreadsheet, label: "Clean Data", path: "/clean" },
   { icon: BookOpen, label: "Dictionary", path: "/dictionary" },
   { icon: Wand2, label: "Dictionary Generator", path: "/dictionary/generate" },
+  { icon: Database, label: "HS Taxonomy", path: "/taxonomy" },
 ];
 
 export function Sidebar({ setToken }: { setToken: (token: string | null) => void }) {

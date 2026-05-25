@@ -33,6 +33,6 @@ with open('Create_Dictionary/Raw/8539-NK-Th12.2025.xlsx', 'rb') as f:
     raw_nk = load_robust_df(f.read(), '8539-NK-Th12.2025.xlsx')
 
 print(f"Loaded {len(raw_nk)} rows.")
-generator = DictionaryGenerator(groq_api_key=os.environ.get("GROQ_API_KEY"))
+generator = DictionaryGenerator(deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"))
 draft_df, processed_raw_df = generator.generate_draft_taxonomy(raw_nk, use_llm=True)
 print(f"Generated {len(draft_df)} groups.")

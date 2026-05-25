@@ -1,11 +1,13 @@
 import React, { useState, useRef } from 'react';
-import { Upload, CheckCircle, BrainCircuit, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { Upload, CheckCircle, BrainCircuit, AlertCircle, Sparkles, RefreshCw, Database } from 'lucide-react';
 import usePersistedState from '../hooks/usePersistedState';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { cn } from '../components/ui/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -24,6 +26,16 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
   const [reviewedDraftFile, setReviewedDraftFile] = useState<File | null>(null);
   const [persistedDraftFileName, setPersistedDraftFileName] = usePersistedState('wizard_draft_filename', '');
   const [dictName, setDictName] = usePersistedState('wizard_dict_name', '');
+  // HS Code interception state
+  const [hsCheckOpen, setHsCheckOpen] = useState(false);
+  const [unresolvedHsCodes, setUnresolvedHsCodes] = useState<{hs_code: string; dong_sp: string; industry_name: string; default_type: string}[]>([]);
+  const [hsCheckLoading, setHsCheckLoading] = useState(false);
+  const pendingStep1Ref = useRef(false);
+
+  const DONG_SP_OPTIONS = [
+    'SP BÌNH/PHÍCH', 'SP THỦY TINH', 'SP ĐÈN/BÓNG ĐÈN',
+    'SP ĐÈN/THIẾT BỊ CHIẾU SÁNG', 'SP THIẾT BỊ ĐIỆN GIA DỤNG',
+  ];
 
   const resetWizard = () => {
     setStep(1);
@@ -36,14 +48,46 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
     setError('');
   };
 
-  const handleStep1 = async (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log("Step 1 started. File:", rawFile?.name);
-    if (!rawFile) {
-      setError('Please provide raw file.');
-      return;
-    }
+  const extractHsCodesFromFile = async (file: File): Promise<string[]> => {
+    // Read the file and extract unique HS_Code values
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const text = event.target?.result as string;
+          if (!text) { resolve([]); return; }
+          const lines = text.split('\n');
+          // Find HS_Code column index
+          const headerLine = lines.find(l => l.includes('HS_Code'));
+          if (!headerLine) { resolve([]); return; }
+          const headers = headerLine.split(',').map(h => h.trim().replace(/"/g, ''));
+          const hsIdx = headers.indexOf('HS_Code');
+          if (hsIdx === -1) { resolve([]); return; }
+          const codes = new Set<string>();
+          for (let i = lines.indexOf(headerLine) + 1; i < lines.length; i++) {
+            const cols = lines[i].split(',');
+            if (cols[hsIdx]) {
+              const code = cols[hsIdx].trim().replace(/"/g, '').replace(/\./g, '').replace(/\D/g, '');
+              if (code.length >= 4) codes.add(code);
+            }
+          }
+          resolve(Array.from(codes));
+        } catch {
+          resolve([]);
+        }
+      };
+      // Only read CSV files for HS code extraction
+      if (file.name.endsWith('.csv')) {
+        reader.readAsText(file);
+      } else {
+        // For Excel files, skip pre-check and let the backend handle it
+        resolve([]);
+      }
+    });
+  };
 
+  const proceedWithStep1 = async () => {
+    if (!rawFile) return;
     setLoading(true);
     setError('');
     
@@ -52,20 +96,14 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
 
     try {
       const token = localStorage.getItem('token');
-      console.log("Calling API Step 1...");
       const res = await fetch(`${API_URL}/api/dictionaries/generate/step1?use_llm=${useLlm}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData
       });
       
-      console.log("API Step 1 Response status:", res.status);
       if (res.ok) {
-        console.log("Blobbing...");
         const blob = await res.blob();
-        console.log("Blob received. Size:", blob.size);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -79,21 +117,103 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
         setStep(2);
       } else {
         const data = await res.json();
-        console.error("Error data:", data);
         const errorDetail = data.detail;
-        if (typeof errorDetail === 'string') {
-          setError(errorDetail);
-        } else if (Array.isArray(errorDetail)) {
-          setError(errorDetail[0]?.msg || 'Action failed');
-        } else {
-          setError('Action failed');
-        }
+        if (typeof errorDetail === 'string') setError(errorDetail);
+        else if (Array.isArray(errorDetail)) setError(errorDetail[0]?.msg || 'Action failed');
+        else setError('Action failed');
       }
     } catch (err) {
-      console.error("Step 1 Exception:", err);
       setError('An error occurred during Step 1.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleStep1 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rawFile) {
+      setError('Please provide raw file.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Extract HS codes from raw file and check against DB
+      const hsCodes = await extractHsCodesFromFile(rawFile);
+      
+      if (hsCodes.length > 0) {
+        const token = localStorage.getItem('token');
+        const checkRes = await fetch(`${API_URL}/api/taxonomy/check-hs-codes`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ hs_codes: hsCodes }),
+        });
+
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          if (checkData.unresolved && checkData.unresolved.length > 0) {
+            // Show interception dialog
+            setUnresolvedHsCodes(
+              checkData.unresolved.map((u: {hs_code: string}) => ({
+                hs_code: u.hs_code,
+                dong_sp: 'SP BÌNH/PHÍCH',
+                industry_name: '',
+                default_type: 'NC',
+              }))
+            );
+            setHsCheckOpen(true);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+
+      // No unresolved codes, proceed directly
+      await proceedWithStep1();
+    } catch (err) {
+      setError('An error occurred during HS code validation.');
+      setLoading(false);
+    }
+  };
+
+  const handleSaveUnresolvedHsCodes = async () => {
+    setHsCheckLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/taxonomy/bulk-save`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: unresolvedHsCodes.map(u => ({
+            hs_code_prefix: u.hs_code,
+            dong_sp: u.dong_sp,
+            industry_name: u.industry_name,
+            default_type: u.default_type,
+          })),
+        }),
+      });
+
+      if (res.ok) {
+        setHsCheckOpen(false);
+        setUnresolvedHsCodes([]);
+        // Proceed with Step 1 after saving
+        await proceedWithStep1();
+      } else {
+        const data = await res.json();
+        setError(data.detail || 'Failed to save HS codes.');
+      }
+    } catch {
+      setError('Error saving HS taxonomy data.');
+    } finally {
+      setHsCheckLoading(false);
     }
   };
 
@@ -302,6 +422,90 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
           Reset Pipeline & Clear Cached Files
         </button>
       </CardFooter>
+
+      {/* HS Code Interception Dialog */}
+      <Dialog open={hsCheckOpen} onOpenChange={(open) => !hsCheckLoading && setHsCheckOpen(open)}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="size-5 text-amber-500" />
+              Missing HS Taxonomy Records
+            </DialogTitle>
+            <DialogDescription>
+              We found {unresolvedHsCodes.length} HS code(s) in your raw file that are not in the database and could not be found automatically. Please provide classification data before generating the draft.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {unresolvedHsCodes.map((item, index) => (
+              <div key={item.hs_code} className="border p-4 rounded-lg bg-muted/10 space-y-3">
+                <div className="font-mono font-bold border-b pb-2">HS: {item.hs_code}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Dòng sản phẩm</label>
+                    <Select 
+                      value={item.dong_sp} 
+                      onValueChange={(val) => {
+                        const newCodes = [...unresolvedHsCodes];
+                        newCodes[index].dong_sp = val;
+                        setUnresolvedHsCodes(newCodes);
+                      }}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {DONG_SP_OPTIONS.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Lớp 1 (Tên ngành)</label>
+                    <Input 
+                      placeholder="e.g. Bóng đèn LED"
+                      value={item.industry_name}
+                      onChange={(e) => {
+                        const newCodes = [...unresolvedHsCodes];
+                        newCodes[index].industry_name = e.target.value;
+                        setUnresolvedHsCodes(newCodes);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Phân loại (NC/LK)</label>
+                    <Select 
+                      value={item.default_type} 
+                      onValueChange={(val) => {
+                        const newCodes = [...unresolvedHsCodes];
+                        newCodes[index].default_type = val;
+                        setUnresolvedHsCodes(newCodes);
+                      }}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NC">Nguyên chiếc (NC)</SelectItem>
+                        <SelectItem value="LK">Linh kiện (LK)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHsCheckOpen(false)} disabled={hsCheckLoading}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveUnresolvedHsCodes} 
+              disabled={hsCheckLoading || unresolvedHsCodes.some(u => !u.industry_name.trim())}
+              className="gap-2"
+            >
+              {hsCheckLoading ? <RefreshCw className="size-4 animate-spin" /> : <Database className="size-4" />}
+              Save & Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };
