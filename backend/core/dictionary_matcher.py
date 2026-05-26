@@ -4,10 +4,10 @@ import pandas as pd
 import os
 
 class DictionaryMatcher:
-    def __init__(self, dict_path, threshold=5):
-        if not dict_path:
-            raise ValueError("dict_path is required")
-        self.dict_path = dict_path
+    def __init__(self, dict_paths=None, threshold=5):
+        if not dict_paths:
+            dict_paths = []
+        self.dict_paths = dict_paths if isinstance(dict_paths, list) else [dict_paths]
         self.DICT_THRESHOLD = threshold
         self.HIGH_VALUE_KEYWORDS = [
             "năng lượng mặt trời", "nlmt", "bán nguyệt", "tuýp bán nguyệt", "âm trần", "đèn âm trần",
@@ -38,31 +38,29 @@ class DictionaryMatcher:
         return ' '.join(text.split()).strip()
 
     def _load_dict(self):
-        if not os.path.exists(self.dict_path):
-            print(f"Warning: Dictionary file not found at {self.dict_path}")
-            return
-            
-        try:
-            # Prefer utf-8-sig as per specification
-            df_dict = pd.read_csv(self.dict_path, encoding='utf-8-sig')
-        except Exception as e:
-            print(f"Notice: Failed to load dictionary with utf-8-sig, trying latin1. Error: {e}")
-            try:
-                df_dict = pd.read_csv(self.dict_path, encoding='latin1')
-            except Exception as e2:
-                print(f"Error: Could not load dictionary file {self.dict_path}. Error: {e2}")
-                return
-
-        # Validation: Check for mandatory columns
-        mandatory_cols = ['Keyword', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Mã HS']
-        missing_cols = [col for col in mandatory_cols if col not in df_dict.columns]
-        if missing_cols:
-            print(f"Error: Dictionary file is missing mandatory columns: {missing_cols}")
-            # Attempt to continue by adding missing columns as 'không_có'
-            for col in missing_cols:
-                df_dict[col] = 'không_có'
-
         mapping_idx = 0
+        for path in self.dict_paths:
+            if not os.path.exists(path):
+                print(f"Warning: Dictionary file not found at {path}")
+                continue
+                
+            try:
+                df_dict = pd.read_csv(path, encoding='utf-8-sig')
+            except Exception as e:
+                print(f"Notice: Failed to load dictionary with utf-8-sig, trying latin1. Error: {e}")
+                try:
+                    df_dict = pd.read_csv(path, encoding='latin1')
+                except Exception as e2:
+                    print(f"Error: Could not load dictionary file {path}. Error: {e2}")
+                    continue
+
+            mandatory_cols = ['Keyword', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Mã HS']
+            missing_cols = [col for col in mandatory_cols if col not in df_dict.columns]
+            if missing_cols:
+                print(f"Error: Dictionary file is missing mandatory columns: {missing_cols}")
+                for col in missing_cols:
+                    df_dict[col] = 'không_có'
+
         for _, row in df_dict.iterrows():
             kw_str = str(row.get('Keyword', '')).lower()
             keywords = [self.clean_text_for_dict(k) for k in kw_str.split(',') if self.clean_text_for_dict(k) != '']

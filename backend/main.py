@@ -73,11 +73,30 @@ app.add_middleware(
 
 jobs = {}
 
+# Global in-memory cache for HS Codes
+hs_customs_cache = {}
+
 @app.on_event("startup")
 def startup_event():
+    global hs_customs_cache
     print("Loading model on startup...")
     get_cleaner()
     print("Model loaded.")
+    
+    print("Loading offline HS Customs Reference into memory...")
+    try:
+        db = database.SessionLocal()
+        records = db.query(models.HSCustomsReference).all()
+        for r in records:
+            hs_customs_cache[r.hs_code] = {
+                "level": r.level,
+                "description_vn": r.description_vn
+            }
+        print(f"Loaded {len(hs_customs_cache)} HS code references into cache.")
+    except Exception as e:
+        print(f"Error loading HS customs cache: {e}")
+    finally:
+        db.close()
 
 def get_user_from_token_query(token: str = Query(...), db: Session = Depends(database.get_db)):
     from jose import jwt, JWTError
@@ -112,6 +131,28 @@ def cleanup_old_files(user_id: int, db: Session):
             if j.id in jobs:
                 del jobs[j.id]
         db.commit()
+
+def load_dataframe_sync(path, csv_mode):
+    if csv_mode:
+        for enc in ['utf-8', 'latin1']:
+            try:
+                df = pd.read_csv(path, encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str, skiprows=9)
+                if 'HS_Code' in df.columns or 'VN_Exporter' in df.columns or 'VN_Importer' in df.columns:
+                    return df
+                
+                df = pd.read_csv(path, encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str)
+                return df
+            except Exception:
+                continue
+        return pd.read_csv(path, encoding='utf-8', on_bad_lines='skip', low_memory=False, dtype=str)
+    else:
+        try:
+            df = pd.read_excel(path, dtype=str, skiprows=9)
+            if 'HS_Code' in df.columns or 'VN_Exporter' in df.columns or 'VN_Importer' in df.columns:
+                return df
+            return pd.read_excel(path, dtype=str)
+        except Exception:
+            return pd.read_excel(path, dtype=str)
 
 import json
 
@@ -158,58 +199,67 @@ async def upload_files(
             pass
 
     batch_id = str(uuid.uuid4())
+    job_id = batch_id # We now have 1:1 relation for batch:job
     new_batch = models.Batch(id=batch_id, user_id=current_user.id, status="processing")
     db.add(new_batch)
-    db.commit()
-
-    tasks_to_run = []
-    response_jobs = []
-
+    
+    merged_temp_path = f"temp_{job_id}_merged.csv"
+    first_file = True
+    processed_any = False
+    
     for file in files:
         if not file.filename.endswith(('.csv', '.xlsx')):
             continue
             
-        job_id = str(uuid.uuid4())
-        temp_path = f"temp_{job_id}_{file.filename}"
-        
         t_type = types_map.get(file.filename)
+        chunk_temp_path = f"temp_chunk_{uuid.uuid4()}_{file.filename}"
         
-        new_job = models.ProcessingJob(
-            id=job_id, 
-            filename=file.filename, 
-            status="pending", 
-            user_id=current_user.id,
-            batch_id=batch_id,
-            transaction_type=t_type
-        )
-        db.add(new_job)
-        
-        with open(temp_path, "wb") as buffer:
+        with open(chunk_temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        jobs[job_id] = {
-            "status": "pending",
-            "file_path": None,
-            "preview": None,
-            "error": None,
-            "transaction_type": t_type,
-            "event_queue": asyncio.Queue()
-        }
-        
-        tasks_to_run.append({
-            "job_id": job_id,
-            "temp_path": temp_path,
-            "filename": file.filename
-        })
-        response_jobs.append(job_id)
-        
+        df_chunk = load_dataframe_sync(chunk_temp_path, file.filename.endswith('.csv'))
+        if df_chunk is not None and not df_chunk.empty:
+            df_chunk['Tên file nguồn'] = file.filename
+            if t_type:
+                df_chunk['transaction_type_override'] = t_type
+            
+            df_chunk.to_csv(merged_temp_path, mode='a', header=first_file, index=False, encoding='utf-8-sig')
+            first_file = False
+            processed_any = True
+            
+        remove_file(chunk_temp_path)
+
+    if not processed_any:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="No valid data found in CSV or Excel files.")
+
+    new_job = models.ProcessingJob(
+        id=job_id, 
+        filename="merged_upload.csv", 
+        status="pending", 
+        user_id=current_user.id,
+        batch_id=batch_id,
+        transaction_type=None
+    )
+    db.add(new_job)
     db.commit()
+
+    jobs[job_id] = {
+        "status": "pending",
+        "file_path": None,
+        "preview": None,
+        "error": None,
+        "transaction_type": None,
+        "event_queue": asyncio.Queue()
+    }
     
-    if not tasks_to_run:
-        raise HTTPException(status_code=400, detail="No valid CSV or Excel files found.")
-        
+    tasks_to_run = [{
+        "job_id": job_id,
+        "temp_path": merged_temp_path,
+        "filename": "merged_upload.csv"
+    }]
     asyncio.create_task(process_batch(batch_id, tasks_to_run))
-    return {"batch_id": batch_id, "job_ids": response_jobs, "message": f"Upload successful, {len(tasks_to_run)} files queued."}
+    return {"batch_id": batch_id, "job_ids": [job_id], "message": f"Upload successful, {len(files)} files merged."}
 
 async def process_job(job_id: str, temp_path: str, original_filename: str):
     job = jobs.get(job_id)
@@ -224,65 +274,21 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
         await progress_callback("Loading Data...")
         is_csv = original_filename.endswith('.csv')
         
-        def load_dataframe(path, csv_mode):
-            if csv_mode:
-                for enc in ['utf-8', 'latin1']:
-                    try:
-                        df = pd.read_csv(path, encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str, skiprows=9)
-                        if 'HS_Code' in df.columns or 'VN_Exporter' in df.columns or 'VN_Importer' in df.columns:
-                            return df
-                        
-                        df = pd.read_csv(path, encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str)
-                        return df
-                    except Exception:
-                        continue
-                return pd.read_csv(path, encoding='utf-8', on_bad_lines='skip', low_memory=False, dtype=str)
-            else:
-                try:
-                    df = pd.read_excel(path, dtype=str, skiprows=9)
-                    if 'HS_Code' in df.columns or 'VN_Exporter' in df.columns or 'VN_Importer' in df.columns:
-                        return df
-                    return pd.read_excel(path, dtype=str)
-                except Exception:
-                    return pd.read_excel(path, dtype=str)
-
-        df = await asyncio.to_thread(load_dataframe, temp_path, is_csv)
+        # We don't need to define load_dataframe inside process_job anymore
+        df = await asyncio.to_thread(load_dataframe_sync, temp_path, is_csv)
             
         db_sync = database.SessionLocal()
         
-        # Context-Aware Dictionary Routing
-        selected_dict = None
-        if 'HS_Code' in df.columns:
-            # Extract unique 4-digit prefixes from the raw file
-            hs_codes = df['HS_Code'].dropna().astype(str)
-            file_prefixes = set()
-            for code in hs_codes:
-                clean = ''.join(c for c in code if c.isdigit())
-                if len(clean) >= 4:
-                    file_prefixes.add(clean[:4])
-                    
-            if file_prefixes:
-                # Find best matching dictionary
-                dictionaries = db_sync.query(models.Dictionary).all()
-                best_match_count = 0
-                for d in dictionaries:
-                    if d.hs_code_prefixes:
-                        d_prefixes = set(d.hs_code_prefixes.split(','))
-                        overlap = len(file_prefixes.intersection(d_prefixes))
-                        if overlap > best_match_count:
-                            best_match_count = overlap
-                            selected_dict = d
-                            
-        # Fall back to active dictionary if no match found
-        if not selected_dict:
-            selected_dict = db_sync.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
-            
-        dict_path = os.path.join(DICTIONARY_STORAGE_PATH, selected_dict.filename) if selected_dict else None
-        dict_id = selected_dict.id if selected_dict else None
+        # Fetch all active dictionaries and sort them: User first, Admin last (Admin overwrites User)
+        active_dicts = db_sync.query(models.Dictionary).join(models.User).filter(models.Dictionary.is_active == True).all()
+        active_dicts.sort(key=lambda d: 1 if d.owner.role == 'admin' else 0)
+        
+        dict_paths = [os.path.join(DICTIONARY_STORAGE_PATH, d.filename) for d in active_dicts]
+        dict_ids = [d.id for d in active_dicts]
         db_sync.close()
         
         cleaner = get_cleaner()
-        result_df = await cleaner.process_async(df, progress_callback=progress_callback, dict_path=dict_path, transaction_type=job.get("transaction_type"))
+        result_df = await cleaner.process_async(df, progress_callback=progress_callback, dict_paths=dict_paths, transaction_type=job.get("transaction_type"))
         
         # Apply column reordering logic
         try:
@@ -329,10 +335,10 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             db_job.total_rows = total_rows
             db_job.total_columns = total_columns
             db_job.processing_time_ms = processing_time_ms
-            db_job.dictionary_id = dict_id
+            db_job.dictionary_id = dict_ids[-1] if dict_ids else None
             
-            if dict_id:
-                usage = models.DictionaryUsage(dictionary_id=dict_id, job_id=job_id)
+            for d_id in dict_ids:
+                usage = models.DictionaryUsage(dictionary_id=d_id, job_id=job_id)
                 db.add(usage)
                 
             db.commit()
@@ -914,6 +920,21 @@ async def check_hs_codes(
                 "industry_name": match.industry_name,
                 "default_type": match.default_type,
                 "source": match.source,
+            })
+            continue
+
+        # Try in-memory offline dictionary
+        from backend.main import hs_customs_cache
+        if clean_code in hs_customs_cache:
+            cache_match = hs_customs_cache[clean_code]
+            # Infer dong_sp and default_type from the crawler logic
+            from .core.crawler import infer_dong_sp, infer_default_type
+            resolved.append({
+                "hs_code": clean_code,
+                "dong_sp": infer_dong_sp(clean_code),
+                "industry_name": cache_match['description_vn'],
+                "default_type": infer_default_type(cache_match['description_vn']),
+                "source": "offline_cache",
             })
             continue
 

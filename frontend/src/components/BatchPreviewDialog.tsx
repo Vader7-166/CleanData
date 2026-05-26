@@ -55,21 +55,23 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
       if (batchRes.ok) {
         const batchData = await batchRes.json();
         const jobs = batchData.jobs.filter((j: any) => j.status === 'done');
-        let allRows: any[] = [];
-        
-        for (const job of jobs) {
+        const fetchPromises = jobs.map(async (job: any) => {
           const prevRes = await fetch(`${API_URL}/api/jobs/${job.id}/preview?limit=50`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (prevRes.ok) {
             const pd = await prevRes.json();
-            const rowsWithSource = pd.preview.map((r: any) => ({
+            return pd.preview.map((r: any) => ({
               ...r,
               'Tên file nguồn': job.filename
             }));
-            allRows = [...allRows, ...rowsWithSource];
           }
-        }
+          return [];
+        });
+
+        const results = await Promise.all(fetchPromises);
+        const allRows = results.flat();
+        
         setPreviewData(allRows);
       }
       
@@ -83,6 +85,8 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
   const filteredData = showOnlyReview 
     ? previewData.filter(row => row['Trạng Thái'] === 'Cần kiểm tra')
     : previewData;
+
+  const allKeys = Array.from(new Set(filteredData.flatMap(row => Object.keys(row))));
 
   const downloadMerged = () => {
     window.location.href = `${API_URL}/api/batches/${batchId}/download-merged?token=${localStorage.getItem('token')}`;
@@ -143,7 +147,7 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                     <div className="h-64">
                       {insights.product_lines?.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
+                          <PieChart margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
                             <Pie
                               data={insights.product_lines}
                               cx="50%"
@@ -152,7 +156,10 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                               outerRadius={80}
                               paddingAngle={5}
                               dataKey="value"
-                              label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              label={({name, percent}) => {
+                                const tName = name.length > 15 ? name.substring(0, 15) + '...' : name;
+                                return `${tName} ${(percent * 100).toFixed(0)}%`;
+                              }}
                             >
                               {insights.product_lines.map((entry: any, index: number) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -171,14 +178,17 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                     <div className="h-64">
                       {insights.nc_lk_ratio?.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
+                          <PieChart margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
                             <Pie
                               data={insights.nc_lk_ratio}
                               cx="50%"
                               cy="50%"
                               outerRadius={80}
                               dataKey="value"
-                              label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              label={({name, percent}) => {
+                                const tName = name.length > 15 ? name.substring(0, 15) + '...' : name;
+                                return `${tName} ${(percent * 100).toFixed(0)}%`;
+                              }}
                             >
                               {insights.nc_lk_ratio.map((entry: any, index: number) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
@@ -197,11 +207,11 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                     <div className="h-72">
                       {insights.top_companies?.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={insights.top_companies} layout="vertical" margin={{ left: 50 }}>
+                          <BarChart data={insights.top_companies} layout="vertical" margin={{ top: 10, right: 30, left: 50, bottom: 10 }}>
                             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                             <XAxis type="number" tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
-                            <YAxis type="category" dataKey="name" width={150} tick={{fontSize: 11}} />
-                            <Tooltip cursor={{fill: '#f5f5f5'}} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Giá trị']} />
+                            <YAxis type="category" dataKey="name" width={150} tick={{fontSize: 11}} tickFormatter={(v) => v.length > 20 ? v.substring(0, 20) + '...' : v} />
+                            <Tooltip cursor={{fill: '#f5f5f5'}} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Giá trị']} labelFormatter={(l) => l} />
                             <Bar dataKey="value" fill="#8884d8" radius={[0, 4, 4, 0]}>
                               {insights.top_companies.map((entry: any, index: number) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -239,7 +249,7 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                   <Table className="relative">
                     <TableHeader className="sticky top-0 bg-background z-10 border-b shadow-sm">
                       <TableRow>
-                        {Object.keys(filteredData[0]).map(col => (
+                        {allKeys.map(col => (
                           <TableHead key={col} className={`whitespace-nowrap ${col === 'Tên file nguồn' ? 'bg-primary/5 font-bold' : ''}`}>
                             {col}
                           </TableHead>
@@ -248,10 +258,10 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                     </TableHeader>
                     <TableBody>
                       {filteredData.map((row, i) => (
-                        <TableRow key={i} className={row['Trạng Thái'] === 'Cần kiểm tra' ? 'bg-amber-50/50' : ''}>
-                          {Object.keys(row).map(col => (
-                            <TableCell key={col} className={`whitespace-nowrap max-w-[250px] truncate ${col === 'Tên file nguồn' ? 'bg-primary/5 font-medium text-xs' : ''}`}>
-                              {row[col]}
+                        <TableRow key={`row-${i}`} className={row['Trạng Thái'] === 'Cần kiểm tra' ? 'bg-amber-50/50' : ''}>
+                          {allKeys.map(col => (
+                            <TableCell key={`cell-${i}-${col}`} className={`whitespace-nowrap max-w-[250px] truncate ${col === 'Tên file nguồn' ? 'bg-primary/5 font-medium text-xs' : ''}`}>
+                              {row[col] !== undefined ? row[col] : ''}
                             </TableCell>
                           ))}
                         </TableRow>

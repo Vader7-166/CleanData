@@ -45,6 +45,10 @@ class DataCleaner:
 
         self.THRESHOLD = 0.85
         self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
+        
+        import concurrent.futures
+        import multiprocessing
+        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
 
     def clean_text_for_dict(self, text):
         text = str(text).lower()
@@ -177,7 +181,7 @@ class DataCleaner:
                 
         return predictions
 
-    async def process_async(self, df, progress_callback=None, dict_path=None, transaction_type=None):
+    async def process_async(self, df, progress_callback=None, dict_paths=None, transaction_type=None):
         if progress_callback: await progress_callback("Mapping Data...")
         
         def initial_mapping():
@@ -267,9 +271,8 @@ class DataCleaner:
             df_clean['Độ Tự Tin (%)'] = 0.0
             df_clean['Trạng Thái'] = ''
         else:
-            import concurrent.futures
             import multiprocessing
-            from backend.core.worker import init_worker, process_chunk
+            from backend.core.worker import process_chunk
             
             total_rows = len(df_clean)
             num_cores = multiprocessing.cpu_count()
@@ -278,16 +281,16 @@ class DataCleaner:
             
             loop = asyncio.get_running_loop()
             
-            with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores, initializer=init_worker, initargs=(dict_path,)) as executor:
-                tasks = []
-                for i in range(0, total_rows, chunk_size):
-                    chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
-                    tasks.append(loop.run_in_executor(executor, process_chunk, chunk))
-                
-                if progress_callback: 
-                    await progress_callback(f"Processing Data... (processing {total_rows} rows concurrently)")
-                
-                results_list = await asyncio.gather(*tasks)
+            tasks = []
+            for i in range(0, total_rows, chunk_size):
+                chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
+                chunk_data = (chunk, dict_paths)
+                tasks.append(loop.run_in_executor(self.executor, process_chunk, chunk_data))
+            
+            if progress_callback: 
+                await progress_callback(f"Processing Data... (processing {total_rows} rows concurrently)")
+            
+            results_list = await asyncio.gather(*tasks)
 
             processed_df = pd.concat(results_list)
             for col in processed_df.columns:

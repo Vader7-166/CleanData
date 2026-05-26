@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -80,3 +80,11 @@ class HSTaxonomy(Base):
     source = Column(String, default='system')  # "system", "crawled", "user_input"
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class HSCustomsReference(Base):
+    __tablename__ = "hs_customs_reference"
+    
+    hs_code = Column(String, primary_key=True, index=True)
+    level = Column(Integer, index=True)
+    description_vn = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

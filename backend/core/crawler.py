@@ -117,6 +117,7 @@ async def crawl_hs_code(hs_code: str) -> Optional[Dict[str, str]]:
         api_key = os.environ.get("DEEPSEEK_API_KEY")
         if api_key:
             try:
+                from openai import AsyncOpenAI
                 prompt = f"""Bạn là một chuyên gia về hải quan và phân loại hàng hóa xuất nhập khẩu Việt Nam. 
 Hãy cho biết thông tin phân loại hải quan chính thức (theo Danh mục hàng hóa xuất nhập khẩu Việt Nam) cho mã HS {clean_code}.
 
@@ -128,25 +129,20 @@ Hãy trả về kết quả ở định dạng JSON với cấu trúc sau:
 
 CHỈ trả về JSON hợp lệ, KHÔNG GIẢI THÍCH."""
 
-                headers = {
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "deepseek-chat",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.2,
-                    "response_format": {"type": "json_object"}
-                }
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.post("https://api.deepseek.com/chat/completions", json=payload, headers=headers)
-                    if resp.status_code == 200:
-                        js_resp = resp.json()
-                        content = js_resp["choices"][0]["message"]["content"].strip()
-                        js_data = json.loads(content)
-                        description = js_data.get("industry_name")
-                        dong_sp_desc = js_data.get("dong_sp_desc")
-                        print(f"DEBUG Crawler: DeepSeek successfully resolved HS code {clean_code}")
+                client = AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+                
+                resp = await client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2,
+                    response_format={"type": "json_object"}
+                )
+                
+                content = resp.choices[0].message.content.strip()
+                js_data = json.loads(content)
+                description = js_data.get("industry_name")
+                dong_sp_desc = js_data.get("dong_sp_desc")
+                print(f"DEBUG Crawler: DeepSeek successfully resolved HS code {clean_code}")
             except Exception as e:
                 print(f"DEBUG Crawler: DeepSeek API failed for {clean_code}: {e}")
 

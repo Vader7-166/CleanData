@@ -21,3 +21,4 @@ requests
 python-dotenv
 httpx
 beautifulsoup4
+openai>=1.0.0
