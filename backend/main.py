@@ -718,17 +718,15 @@ def list_dictionaries(current_user: models.User = Depends(auth.get_current_user)
     ]}
 
 @app.post("/api/dictionaries/{dict_id}/activate")
-def activate_dictionary(dict_id: int, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+def activate_dictionary(dict_id: int, active: bool = True, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
     d = db.query(models.Dictionary).filter(models.Dictionary.id == dict_id).first()
     if not d:
         raise HTTPException(status_code=404, detail="Dictionary not found.")
         
-    db.query(models.Dictionary).update({"is_active": False})
-    
-    d.is_active = True
+    d.is_active = active
     db.commit()
     
-    return {"message": "Dictionary activated successfully."}
+    return {"message": f"Dictionary {'activated' if active else 'deactivated'} successfully."}
 
 @app.get("/api/dictionaries/{dict_id}/download")
 def download_dictionary(dict_id: int, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):

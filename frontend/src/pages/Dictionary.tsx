@@ -180,6 +180,23 @@ const Dictionary = () => {
     }
   };
 
+  const handleDeactivate = async (id: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/dictionaries/${id}/activate?active=false`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        fetchDictionaries();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this dictionary?")) return;
     try {
@@ -296,7 +313,17 @@ const Dictionary = () => {
                       </div>
                     </div>
                     
-                    {!dict.is_active && (
+                    {dict.is_active ? (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full gap-2 mt-2 border-destructive hover:bg-destructive/10 text-destructive"
+                        onClick={() => handleDeactivate(dict.id)}
+                      >
+                        <AlertCircle className="size-4" />
+                        Deactivate
+                      </Button>
+                    ) : (
                       <Button 
                         variant="secondary" 
                         size="sm" 
