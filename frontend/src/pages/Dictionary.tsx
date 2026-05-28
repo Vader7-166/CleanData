@@ -21,26 +21,18 @@ const Dictionary = () => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  };
-
-  const handleBulkActivate = async () => {
-    if (selectedIds.length === 0) return;
+  const handleToggleActive = async (id: string, currentStatus: boolean) => {
     try {
       const token = localStorage.getItem('token');
-      for (const id of selectedIds) {
-        await fetch(`${API_URL}/api/dictionaries/${id}/activate`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+      const res = await fetch(`${API_URL}/api/dictionaries/${id}/activate?active=${!currentStatus}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        fetchDictionaries();
       }
-      setSelectedIds([]);
-      fetchDictionaries();
     } catch (err) {
       console.error(err);
     }
@@ -163,39 +155,7 @@ const Dictionary = () => {
     }
   };
 
-  const handleActivate = async (id: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/dictionaries/${id}/activate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        fetchDictionaries();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
-  const handleDeactivate = async (id: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/dictionaries/${id}/activate?active=false`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        fetchDictionaries();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this dictionary?")) return;
@@ -261,12 +221,6 @@ const Dictionary = () => {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-xl font-bold">Available Dictionaries</h3>
-          {selectedIds.length > 0 && (
-            <Button onClick={handleBulkActivate} size="sm" className="gap-2">
-              <CheckCircle className="size-4" />
-              Activate Selected ({selectedIds.length})
-            </Button>
-          )}
         </div>
         
         {dictionaries.length === 0 ? (
@@ -281,15 +235,15 @@ const Dictionary = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {dictionaries.map(dict => (
-              <Card key={dict.id} className={dict.is_active ? "border-primary ring-1 ring-primary/20" : ""}>
+              <Card key={dict.id} className={dict.is_active ? "border-primary ring-1 ring-primary/20 bg-primary/5" : ""}>
                 <CardContent className="p-6">
-                  <div className="flex flex-col h-full gap-4">
+                  <div className="flex flex-col h-full">
                     <div className="flex justify-between items-start">
                       <div className="flex items-start gap-3 min-w-0">
                         <div className="flex items-center h-6 shrink-0">
                           <Checkbox 
-                            checked={selectedIds.includes(dict.id)}
-                            onCheckedChange={() => toggleSelect(dict.id)}
+                            checked={dict.is_active}
+                            onCheckedChange={() => handleToggleActive(dict.id, dict.is_active)}
                           />
                         </div>
                         <div className="space-y-1 min-w-0 flex-1">
@@ -312,28 +266,6 @@ const Dictionary = () => {
                         </Button>
                       </div>
                     </div>
-                    
-                    {dict.is_active ? (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="w-full gap-2 mt-2 border-destructive hover:bg-destructive/10 text-destructive"
-                        onClick={() => handleDeactivate(dict.id)}
-                      >
-                        <AlertCircle className="size-4" />
-                        Deactivate
-                      </Button>
-                    ) : (
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="w-full gap-2 mt-2"
-                        onClick={() => handleActivate(dict.id)}
-                      >
-                        <CheckCircle className="size-4" />
-                        Set as Active
-                      </Button>
-                    )}
                   </div>
                 </CardContent>
               </Card>
