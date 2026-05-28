@@ -285,17 +285,17 @@ const Dictionary = () => {
                 <CardContent className="p-6">
                   <div className="flex flex-col h-full gap-4">
                     <div className="flex justify-between items-start">
-                      <div className="flex items-start gap-3">
-                        <div className="pt-1">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="flex items-center h-6 shrink-0">
                           <Checkbox 
                             checked={selectedIds.includes(dict.id)}
                             onCheckedChange={() => toggleSelect(dict.id)}
                           />
                         </div>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold truncate max-w-[160px]" title={dict.filename}>{dict.filename}</h4>
-                            {dict.is_active && <Badge className="bg-primary hover:bg-primary">Active</Badge>}
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold truncate max-w-[280px]" title={dict.filename}>{dict.filename}</h4>
+                            {dict.is_active && <Badge className="bg-primary hover:bg-primary shrink-0">Active</Badge>}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1"><Calendar className="size-3" /> {new Date(dict.created_at).toLocaleDateString()}</span>
