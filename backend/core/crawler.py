@@ -81,7 +81,20 @@ def clean_industry_name(desc: str) -> str:
 def infer_dong_sp(hs_code: str) -> str:
     """Infer the product line from the 4-digit prefix of the HS code."""
     prefix4 = hs_code[:4]
-    return DONG_SP_FALLBACK.get(prefix4, f'SP {prefix4}')
+    if prefix4 in DONG_SP_FALLBACK:
+        return DONG_SP_FALLBACK[prefix4]
+        
+    try:
+        from backend.main import hs_customs_cache
+        if prefix4 in hs_customs_cache:
+            desc = hs_customs_cache[prefix4].get("description_vn")
+            if desc:
+                return clean_dong_sp_description(desc)
+    except Exception:
+        pass
+    return f'SP {prefix4}'
+
+
 
 
 async def crawl_hs_code(hs_code: str) -> Optional[Dict[str, str]]:
