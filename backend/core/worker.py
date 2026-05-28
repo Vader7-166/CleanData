@@ -1,13 +1,15 @@
 import pandas as pd
 import re
 
-# Global dictionary matcher instance for the worker process
-matcher = None
+# Cache for DictionaryMatchers
+matchers_cache = {}
 
-def init_worker(dict_path):
-    global matcher
-    from backend.core.dictionary_matcher import DictionaryMatcher
-    matcher = DictionaryMatcher(dict_path=dict_path)
+def get_matcher(dict_paths):
+    key = tuple(dict_paths) if dict_paths else ()
+    if key not in matchers_cache:
+        from backend.core.dictionary_matcher import DictionaryMatcher
+        matchers_cache[key] = DictionaryMatcher(dict_paths=dict_paths)
+    return matchers_cache[key]
 
 def trich_xuat_thong_tin(raw_text):
     raw_text = str(raw_text)
@@ -31,13 +33,15 @@ def trich_xuat_thong_tin(raw_text):
             break
     return hang, cong_suat, raw_text
 
-def process_chunk(chunk_df):
+def process_chunk(chunk_data):
     """
+    chunk_data is a tuple of (chunk_df, dict_paths).
     chunk_df contains 'Tên hàng raw'.
     Returns a dataframe containing:
     'Hãng', 'Công suất', 'Tên hàng', 'input_for_ai', 'Ket_Qua_Gop', 'Độ Tự Tin (%)', 'Trạng Thái'
     """
-    global matcher
+    chunk_df, dict_paths = chunk_data
+    matcher = get_matcher(dict_paths)
     
     # 1. Trich xuat thong tin
     extracted = chunk_df['Tên hàng raw'].apply(lambda x: pd.Series(trich_xuat_thong_tin(x)))

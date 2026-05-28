@@ -45,6 +45,10 @@ class DataCleaner:
 
         self.THRESHOLD = 0.85
         self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
+        
+        import concurrent.futures
+        import multiprocessing
+        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
 
     def clean_text_for_dict(self, text):
         text = str(text).lower()
@@ -177,7 +181,7 @@ class DataCleaner:
                 
         return predictions
 
-    async def process_async(self, df, progress_callback=None, dict_path=None):
+    async def process_async(self, df, progress_callback=None, dict_paths=None, transaction_type=None):
         if progress_callback: await progress_callback("Mapping Data...")
         
         def initial_mapping():
@@ -199,33 +203,52 @@ class DataCleaner:
                 df_clean['Công ty XK'] = df['VN_Exporter'].fillna(df.get('VN_Exporter_EN', ''))
                 df_clean['Công ty NK'] = df.get('Foreign_Importer', '')
                 df_clean['Quốc gia'] = df.get('Destination_Country', '').fillna(df.get('Destination_Country_CN', ''))
+                detected_type = 'Xuất khẩu'
             elif is_nk:
                 df_clean['Công ty NK'] = df['VN_Importer'].fillna(df.get('VN_Importer_EN', ''))
                 df_clean['Công ty XK'] = df.get('Foreign_Exporter', '')
                 df_clean['Quốc gia'] = df.get('Origin_Country', '').fillna(df.get('Origin_Country_CN', ''))
+                detected_type = 'Nhập khẩu'
             else:
                 df_clean['Công ty XK'] = ''
                 df_clean['Công ty NK'] = ''
                 df_clean['Quốc gia'] = ''
+                detected_type = ''
+                
+            # Use provided transaction_type or fallback to auto-detected
+            final_type = transaction_type if transaction_type else detected_type
+            df_clean['Loại giao dịch'] = final_type
 
             df_clean['Châu lục'] = df.get('Continent', '')
             df_clean['Incoterms'] = df.get('Incoterms', '')
             df_clean['Method_of_Payment'] = df.get('Method_of_Payment', '')
             df_clean['DVT'] = df.get('Unit_Qty', '')
-            df_clean['Lượng'] = df.get('Quantity', '')
-            df_clean['Giá trị'] = df.get('Total_Value_USD', '')
-            df_clean['Đơn giá'] = df.get('Unit_Price_USD', '')
+            df_clean['Lượng'] = pd.to_numeric(
+                df.get('Quantity', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
+                errors='coerce'
+            )
+            df_clean['Giá trị'] = pd.to_numeric(
+                df.get('Total_Value_USD', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
+                errors='coerce'
+            )
+            df_clean['Đơn giá'] = pd.to_numeric(
+                df.get('Unit_Price_USD', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
+                errors='coerce'
+            )
 
             if 'Date' in df.columns:
                 date_series = pd.to_datetime(df['Date'], errors='coerce')
-                extracted_month = date_series.dt.month.astype(str)
+                # Keep full date as ISO YYYY-MM-DD for BI tools
+                df_clean['Ngày'] = date_series.dt.strftime('%Y-%m-%d')
+                df_clean['Ngày'] = df_clean['Ngày'].fillna('')
+                # Add separate integer month column for pivot analysis
+                extracted_month = date_series.dt.month
                 month_col = df.get('Month', pd.Series(dtype=str)).astype(str).str[-2:]
-                month_col = month_col.replace({'nan': np.nan, '': np.nan})
-                df_clean['Ngày'] = extracted_month.fillna(month_col)
-                df_clean['Ngày'] = pd.to_numeric(df_clean['Ngày'], errors='coerce').astype('Int64')
-                df_clean['Ngày'] = df_clean['Ngày'].apply(lambda x: f"Tháng {x}" if pd.notna(x) else '')
+                month_col = pd.to_numeric(month_col, errors='coerce')
+                df_clean['Tháng'] = extracted_month.fillna(month_col).astype('Int64')
             else:
                 df_clean['Ngày'] = ''
+                df_clean['Tháng'] = pd.array([pd.NA] * len(df), dtype='Int64')
 
             detailed_product = df.get('Detailed_Product', pd.Series(dtype=str))
             if 'Detailed_Product_EN' in df.columns:
@@ -248,9 +271,8 @@ class DataCleaner:
             df_clean['Độ Tự Tin (%)'] = 0.0
             df_clean['Trạng Thái'] = ''
         else:
-            import concurrent.futures
             import multiprocessing
-            from backend.core.worker import init_worker, process_chunk
+            from backend.core.worker import process_chunk
             
             total_rows = len(df_clean)
             num_cores = multiprocessing.cpu_count()
@@ -259,16 +281,16 @@ class DataCleaner:
             
             loop = asyncio.get_running_loop()
             
-            with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores, initializer=init_worker, initargs=(dict_path,)) as executor:
-                tasks = []
-                for i in range(0, total_rows, chunk_size):
-                    chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
-                    tasks.append(loop.run_in_executor(executor, process_chunk, chunk))
-                
-                if progress_callback: 
-                    await progress_callback(f"Processing Data... (processing {total_rows} rows concurrently)")
-                
-                results_list = await asyncio.gather(*tasks)
+            tasks = []
+            for i in range(0, total_rows, chunk_size):
+                chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
+                chunk_data = (chunk, dict_paths)
+                tasks.append(loop.run_in_executor(self.executor, process_chunk, chunk_data))
+            
+            if progress_callback: 
+                await progress_callback(f"Processing Data... (processing {total_rows} rows concurrently)")
+            
+            results_list = await asyncio.gather(*tasks)
 
             processed_df = pd.concat(results_list)
             for col in processed_df.columns:
@@ -333,6 +355,18 @@ class DataCleaner:
             for col in df.columns:
                 if col not in mapped_cols_set and col not in df_final.columns:
                     df_final[col] = df[col]
+            
+            # BI-Ready: Rename English column headers to Vietnamese
+            rename_map = {
+                'Method_of_Payment': 'Phương thức thanh toán',
+            }
+            df_final = df_final.rename(columns=rename_map)
+            
+            # BI-Ready: Drop pandas duplicate suffix columns (e.g. "Công suất.1")
+            suffix_cols = [c for c in df_final.columns if c.endswith('.1')]
+            if suffix_cols:
+                df_final = df_final.drop(columns=suffix_cols, errors='ignore')
+            
             return df_final
 
         df_final = await asyncio.to_thread(finalize)

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Trash2, CheckCircle, Upload, BookOpen, AlertCircle, Calendar, Activity } from 'lucide-react';
+import { Download, Trash2, CheckCircle, Upload, BookOpen, AlertCircle, Calendar, Activity, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
+import { Checkbox } from '../components/ui/checkbox';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -20,6 +21,22 @@ const Dictionary = () => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const handleToggleActive = async (id: string, currentStatus: boolean) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/dictionaries/${id}/activate?active=${!currentStatus}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        fetchDictionaries();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchDictionaries = async () => {
     try {
@@ -122,7 +139,14 @@ const Dictionary = () => {
         setFile(null);
         fetchDictionaries();
       } else {
-        setError(data.detail || 'Upload failed');
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Upload failed');
+        } else {
+          setError('Upload failed');
+        }
       }
     } catch (err) {
       setError('An error occurred during upload.');
@@ -131,22 +155,7 @@ const Dictionary = () => {
     }
   };
 
-  const handleActivate = async (id: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/dictionaries/${id}/activate`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      if (res.ok) {
-        fetchDictionaries();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this dictionary?")) return;
@@ -210,7 +219,9 @@ const Dictionary = () => {
       </Card>
 
       <div className="space-y-4">
-        <h3 className="text-xl font-bold">Available Dictionaries</h3>
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-bold">Available Dictionaries</h3>
+        </div>
         
         {dictionaries.length === 0 ? (
           <Card className="border-dashed">
@@ -224,21 +235,29 @@ const Dictionary = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {dictionaries.map(dict => (
-              <Card key={dict.id} className={dict.is_active ? "border-primary ring-1 ring-primary/20" : ""}>
+              <Card key={dict.id} className={dict.is_active ? "border-primary ring-1 ring-primary/20 bg-primary/5" : ""}>
                 <CardContent className="p-6">
-                  <div className="flex flex-col h-full gap-4">
+                  <div className="flex flex-col h-full">
                     <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold truncate max-w-[200px]" title={dict.filename}>{dict.filename}</h4>
-                          {dict.is_active && <Badge className="bg-primary hover:bg-primary">Active</Badge>}
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="flex items-center h-6 shrink-0">
+                          <Checkbox 
+                            checked={dict.is_active}
+                            onCheckedChange={() => handleToggleActive(dict.id, dict.is_active)}
+                          />
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1"><Calendar className="size-3" /> {new Date(dict.created_at).toLocaleDateString()}</span>
-                          <span className="flex items-center gap-1"><Activity className="size-3" /> {stats[dict.id] || 0} uses</span>
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold truncate max-w-[280px]" title={dict.filename}>{dict.filename}</h4>
+                            {dict.is_active && <Badge className="bg-primary hover:bg-primary shrink-0">Active</Badge>}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1"><Calendar className="size-3" /> {new Date(dict.created_at).toLocaleDateString()}</span>
+                            <span className="flex items-center gap-1"><Activity className="size-3" /> {stats[dict.id] || 0} uses</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 shrink-0">
                         <Button variant="outline" size="icon" className="size-8" onClick={() => handleDownload(dict.id, dict.filename)} title="Download">
                           <Download className="size-4" />
                         </Button>
@@ -247,18 +266,6 @@ const Dictionary = () => {
                         </Button>
                       </div>
                     </div>
-                    
-                    {!dict.is_active && (
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        className="w-full gap-2 mt-2"
-                        onClick={() => handleActivate(dict.id)}
-                      >
-                        <CheckCircle className="size-4" />
-                        Set as Active
-                      </Button>
-                    )}
                   </div>
                 </CardContent>
               </Card>

@@ -11,7 +11,7 @@ from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import DBSCAN
 from sklearn.metrics.pairwise import cosine_distances
-from groq import Groq
+import requests
 
 # ===========================================================================
 # CONSTANTS & CONFIGURATION (Full port from original repo)
@@ -185,20 +185,48 @@ _VALID_TOKEN_RE = re.compile(r'[a-záàảãạăắằẳẵặâấầẩẫ�
 # ===========================================================================
 
 class DictionaryGenerator:
-    def __init__(self, groq_api_key=None):
-        self.groq_api_key = groq_api_key
+    def __init__(self, deepseek_api_key=None, db_taxonomy=None):
+        """
+        Args:
+            deepseek_api_key: Optional API key for DeepSeek LLM labeling.
+            db_taxonomy: Optional list of dicts from DB with keys:
+                         hs_code_prefix, dong_sp, industry_name, default_type.
+                         If provided, overrides the hardcoded constants.
+        """
+        self.deepseek_api_key = deepseek_api_key
         self.vi_stopwords = VI_STOPWORDS
         self.label_stopwords = LABEL_STOPWORDS
-        self.hs_taxonomy = HS_TAXONOMY
-        self.hs_type_map = HS_TYPE_MAP
-        self.dong_sp_map = DONG_SP_MAP
+        
+        if db_taxonomy:
+            # Build dynamic lookups from database records
+            self.hs_taxonomy = {r['hs_code_prefix']: r['industry_name'] for r in db_taxonomy}
+            self.hs_type_map = {r['hs_code_prefix']: r['default_type'] for r in db_taxonomy}
+            # Build dong_sp_map from unique 4-digit prefixes
+            self.dong_sp_map = {}
+            for r in db_taxonomy:
+                p4 = r['hs_code_prefix'][:4]
+                if p4 not in self.dong_sp_map:
+                    self.dong_sp_map[p4] = r['dong_sp']
+        else:
+            # Fallback to hardcoded constants
+            self.hs_taxonomy = HS_TAXONOMY
+            self.hs_type_map = HS_TYPE_MAP
+            self.dong_sp_map = DONG_SP_MAP
 
     def clean_text(self, text):
         if pd.isna(text): return ''
         text = str(text).lower()
         text = re.sub(r'^[^#]*#\s*&?\s*', '', text)
         text = re.sub(r'#\s*&?\s*vn\s*$', '', text)
-        text = re.sub(r'[^a-záàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ0-9\s]+', ' ', text)
+        
+        # Remove mixed alphanumeric model/spec codes (e.g. RS-378B, 15W, 1.2m, 12oz)
+        text = re.sub(r'\b(?=[a-z0-9.-]*\d)(?=[a-z0-9.-]*[a-z])[a-z0-9.-]+\b', ' ', text)
+        
+        # Remove pure numbers (e.g. 100, 2026, 1.5)
+        text = re.sub(r'\b\d+(?:[.,]\d+)?\b', ' ', text)
+        
+        # Remove non-alphanumeric characters, keeping only letters and spaces
+        text = re.sub(r'[^a-záàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợùúụủũụưứừửữựýỳỷỹỵđ\s]+', ' ', text)
         return re.sub(r'\s+', ' ', text).strip()
 
     def tokenize_vi(self, text, use_label_stopwords=False):
@@ -276,14 +304,25 @@ class DictionaryGenerator:
         if hs_code in self.hs_type_map: return self.hs_type_map[hs_code]
         return 'LK' if hits >= 1 else 'NC'
 
-    def label_clusters_llm(self, names_tfidf, data, batch_size=15):
-        if not self.groq_api_key: return names_tfidf
+    def label_clusters_llm(self, names_tfidf, data, batch_size=15, progress_callback=None):
+        if not self.deepseek_api_key: return names_tfidf
         try:
-            client = Groq(api_key=self.groq_api_key)
             lbls = [l for l in names_tfidf.keys() if l != -1]
             res = {l: names_tfidf[l] for l in names_tfidf.keys() if l == -1}
-            print(f"DEBUG: Starting LLM labeling for {len(lbls)} clusters in {len(lbls)//batch_size + 1} batches")
+            total_batches = len(lbls)//batch_size + (1 if len(lbls) % batch_size != 0 else 0)
+            if total_batches == 0:
+                total_batches = 1
+            print(f"DEBUG: Starting DeepSeek LLM labeling for {len(lbls)} clusters in {total_batches} batches")
+            
+            headers = {
+                "Authorization": f"Bearer {self.deepseek_api_key}",
+                "Content-Type": "application/json"
+            }
+            
             for i in range(0, len(lbls), batch_size):
+                batch_idx = i//batch_size + 1
+                if progress_callback:
+                    progress_callback(batch_idx, total_batches, f"LLM Labeling batch {batch_idx} of {total_batches}...")
                 batch = lbls[i:i+batch_size]
                 prompt = "Bạn là chuyên gia phân loại hàng hóa hải quan. Hãy đặt TÊN DANH MỤC ngắn gọn, có ý nghĩa cho các nhóm sản phẩm sau.\n\n"
                 prompt += "YÊU CẦU:\n"
@@ -300,8 +339,17 @@ class DictionaryGenerator:
                         prompt += f"- {s}\n"
                     prompt += "\n"
                 try:
-                    resp = client.chat.completions.create(messages=[{"role":"user","content":prompt}], model="llama-3.1-8b-instant", temperature=0.2, response_format={"type":"json_object"})
-                    js = json.loads(resp.choices[0].message.content.strip())
+                    payload = {
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.2,
+                        "response_format": {"type": "json_object"}
+                    }
+                    resp = requests.post("https://api.deepseek.com/chat/completions", json=payload, headers=headers, timeout=60)
+                    resp.raise_for_status()
+                    resp_json = resp.json()
+                    content = resp_json["choices"][0]["message"]["content"].strip()
+                    js = json.loads(content)
                     print(f"DEBUG: LLM batch {i//batch_size + 1} success.")
                     for l in batch: 
                         val = js.get(str(l)) or js.get(l)
@@ -316,7 +364,7 @@ class DictionaryGenerator:
             print(f"DEBUG: LLM labeling global fail: {e}")
             return names_tfidf
 
-    def generate_draft_taxonomy(self, raw_df, eps=0.65, min_samples=5, use_llm=True):
+    def generate_draft_taxonomy(self, raw_df, eps=0.70, min_samples=8, use_llm=True, progress_callback=None):
         raw_df = raw_df.copy()
         # Clean HS_Code column: remove dots and non-digits
         raw_df['HS_Code'] = raw_df['HS_Code'].astype(str).apply(lambda x: re.sub(r'\D', '', x))
@@ -326,8 +374,16 @@ class DictionaryGenerator:
         raw_df = raw_df[raw_df['_tok'].str.len() > 0].reset_index(drop=True)
         
         all_rows = []
-        for hs in sorted(raw_df['HS_Code'].unique()):
+        unique_hs = sorted(raw_df['HS_Code'].unique())
+        total_hs = len(unique_hs)
+        hs_idx = 0
+        
+        for hs in unique_hs:
             if not hs: continue
+            hs_idx += 1
+            if progress_callback:
+                progress_callback(hs_idx, total_hs, f"Processing HS Code {hs} ({hs_idx}/{total_hs})...")
+            
             sub = raw_df[raw_df['HS_Code'] == hs].copy()
             lbls = self.cluster_products(sub['_tok'].tolist(), eps, min_samples)
             raw_df.loc[sub.index, '_cluster'] = lbls
@@ -356,7 +412,7 @@ class DictionaryGenerator:
             
             non_out = {l: v for l, v in c_data.items() if l != -1}
             names = self.get_cluster_names_tfidf(non_out)
-            if use_llm: names = self.label_clusters_llm(names, non_out)
+            if use_llm: names = self.label_clusters_llm(names, non_out, progress_callback=progress_callback)
             if -1 in c_data: names[-1] = f"[OUTLIER] {self.get_cluster_name_fallback(c_data[-1]['prods'], c_data[-1]['raw'], 3)}"
 
             for l in sorted(set(lbls)):

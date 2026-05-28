@@ -1,102 +1,102 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud, FileSpreadsheet, Download, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { UploadCloud, Download, RefreshCw, CheckCircle, AlertCircle, FileText, Check, Clock, PlayCircle } from 'lucide-react';
 import usePersistedState from '../hooks/usePersistedState';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
+import BatchPreviewDialog from '../components/BatchPreviewDialog';
+import { useFileContext } from '../contexts/FileContext';
 
-const API_BASE = "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const CleanData = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [persistedFileName, setPersistedFileName] = usePersistedState('clean_data_filename', '');
+  const { cleanDataFiles: files, setCleanDataFiles: setFiles } = useFileContext();
+  const [transactionTypes, setTransactionTypes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = usePersistedState<string[]>('clean_data_logs', []);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<{ jobId: string; preview: any[] } | null>(null);
-  const [activeJobId, setActiveJobId] = usePersistedState<string | null>('clean_data_job_id', null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Auto-resume job if found on mount
-  useEffect(() => {
-    if (activeJobId && !result && !loading) {
-      resumeJob(activeJobId);
-    }
-  }, []);
-
-  const resumeJob = async (jobId: string) => {
-    setLoading(true);
-    const token = localStorage.getItem('token');
-    
-    try {
-      const res = await fetch(`${API_BASE}/api/jobs/${jobId}/preview`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setResult({ jobId, preview: data.preview });
-        setLoading(false);
-      } else {
-        connectToStream(jobId, token!);
-      }
-    } catch (err) {
-      console.error("Error resuming job:", err);
-      resetPage();
-    }
-  };
-
-  const connectToStream = (jobId: string, token: string) => {
-    const evtSource = new EventSource(`${API_BASE}/stream/${jobId}?token=${token}`);
-      
-    evtSource.onmessage = async (e) => {
-      const eventData = JSON.parse(e.data);
-      if (eventData.event === 'progress') {
-        setLogs((prev: string[]) => [...prev, eventData.data]);
-      } else if (eventData.event === 'done') {
-        evtSource.close();
-        await fetchResults(jobId);
-      } else if (eventData.event === 'error') {
-        evtSource.close();
-        setError(eventData.data);
-        setLoading(false);
-        setActiveJobId(null);
-      }
-    };
-
-    evtSource.onerror = () => {
-      evtSource.close();
-      fetchResults(jobId).catch(() => {
-        setError("Connection to progress stream lost.");
-        setLoading(false);
-      });
-    };
-  };
   
+  const [activeBatchId, setActiveBatchId] = usePersistedState<string | null>('clean_data_batch_id', null);
+  const [batchStatus, setBatchStatus] = useState<any>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollingIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (activeBatchId) {
+      startPolling(activeBatchId);
+    }
+    return () => stopPolling();
+  }, [activeBatchId]);
+
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      window.clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  };
+
+  const startPolling = (batchId: string) => {
+    stopPolling();
+    setLoading(true);
+    pollingIntervalRef.current = window.setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/batches/${batchId}`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setBatchStatus(data);
+          
+          if (data.status === 'done' || data.status === 'error') {
+            stopPolling();
+            setLoading(false);
+          }
+        } else {
+          stopPolling();
+          setError("Failed to fetch batch status.");
+          setLoading(false);
+        }
+      } catch (err) {
+        stopPolling();
+        setError("Network error fetching batch status.");
+        setLoading(false);
+      }
+    }, 2000);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const selectedFile = e.target.files[0];
-      setFile(selectedFile);
-      setPersistedFileName(selectedFile.name);
+      const selectedFiles = Array.from(e.target.files);
+      setFiles(selectedFiles);
+      
+      const newTypes: Record<string, string> = {};
+      selectedFiles.forEach(f => {
+        newTypes[f.name] = ""; // default to auto
+      });
+      setTransactionTypes(newTypes);
       setError('');
-      setResult(null);
-      setLogs([]);
     }
+  };
+
+  const handleTypeChange = (filename: string, type: string) => {
+    setTransactionTypes(prev => ({ ...prev, [filename]: type === "auto" ? "" : type }));
   };
 
   const handleProcess = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setLoading(true);
     setError('');
-    setLogs([]);
-    setResult(null);
 
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(file => {
+      formData.append('files', file);
+    });
+    formData.append('transaction_types', JSON.stringify(transactionTypes));
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/upload`, {
+      const response = await fetch(`${API_URL}/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -108,48 +108,29 @@ const CleanData = () => {
       }
 
       const data = await response.json();
-      const jobId = data.job_id;
-      setActiveJobId(jobId);
-
-      connectToStream(jobId, token!);
-
+      setActiveBatchId(data.batch_id);
     } catch (err: any) {
       setError(err.message);
       setLoading(false);
     }
   };
 
-  const fetchResults = async (jobId: string) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/jobs/${jobId}/preview`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      if (!response.ok) throw new Error("Failed to load preview.");
-      const data = await response.json();
-      setResult({ jobId, preview: data.preview });
-    } catch(err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const resetPage = () => {
-    setFile(null);
-    setPersistedFileName('');
-    setResult(null);
-    setLogs([]);
+    setFiles([]);
+    setTransactionTypes({});
+    setBatchStatus(null);
     setError('');
-    setActiveJobId(null);
+    setActiveBatchId(null);
+    stopPolling();
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Clean Data</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Batch Clean Data</h2>
         <p className="text-muted-foreground">
-          Upload an Excel or CSV file to sanitize and predict missing columns using AI.
+          Upload multiple Excel/CSV files for batch processing. Dictionaries are automatically routed by HS code.
         </p>
       </div>
 
@@ -160,12 +141,13 @@ const CleanData = () => {
         </div>
       )}
 
-      {!result && !loading && (
+      {/* Upload Phase */}
+      {!batchStatus && !loading && (
         <Card className="max-w-3xl mx-auto">
           <CardContent className="pt-6">
             <div 
               className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
-                file ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                files.length > 0 ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
               }`}
             >
               <div className="flex flex-col items-center gap-4">
@@ -173,133 +155,140 @@ const CleanData = () => {
                   <UploadCloud className="w-8 h-8 text-primary" />
                 </div>
                 <div>
-                  {persistedFileName && !file ? (
-                    <div className="space-y-2">
-                      <p className="font-semibold text-primary">Previous session found: {persistedFileName}</p>
-                      <p className="text-sm text-muted-foreground">Please re-select this file to continue or start over.</p>
-                    </div>
-                  ) : (
-                    <p className="mb-2 font-medium text-lg">
-                      {file ? file.name : "Kéo thả tệp Excel vào đây"}
-                    </p>
-                  )}
+                  <p className="mb-2 font-medium text-lg">
+                    {files.length > 0 ? `${files.length} files selected` : "Drag and drop files here"}
+                  </p>
                   
                   <div className="mt-4 flex flex-col items-center gap-4">
-                    <Button variant={file ? "outline" : "default"} asChild>
+                    <Button variant={files.length > 0 ? "outline" : "default"} asChild>
                       <label className="cursor-pointer">
-                        {file || persistedFileName ? 'Change File' : 'Browse File'}
-                        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
+                        {files.length > 0 ? 'Change Files' : 'Browse Files'}
+                        <input type="file" multiple ref={fileInputRef} onChange={handleFileChange} accept=".csv, .xlsx, .xls" className="hidden" />
                       </label>
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Hỗ trợ định dạng: .xlsx, .xls, .csv
+                      Supported formats: .xlsx, .xls, .csv
                     </p>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="mt-8 flex justify-center">
-              <Button 
-                onClick={handleProcess} 
-                disabled={!file} 
-                className="w-full max-w-sm h-12 text-lg font-semibold"
-              >
-                {file ? "Start Processing" : "Select a file to begin"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {loading && (
-        <Card className="max-w-3xl mx-auto">
-          <CardContent className="pt-12 pb-12 text-center space-y-6">
-            <div className="flex justify-center">
-              <div className="relative">
-                <div className="size-20 border-4 border-primary/20 rounded-full animate-pulse"></div>
-                <RefreshCw className="size-10 text-primary animate-spin absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-bold">Processing Data...</h3>
-              <p className="text-muted-foreground">Using Hybrid NLP Model for prediction</p>
-            </div>
-            
-            <div className="text-left bg-muted/50 rounded-lg p-6 font-mono text-sm max-h-[300px] overflow-y-auto border">
-              {logs.length > 0 ? (
-                <ul className="space-y-1">
-                  {logs.map((log, i) => (
-                    <li key={i} className="flex gap-2">
-                      <span className="text-primary/50">[{new Date().toLocaleTimeString()}]</span>
-                      <span>{log}</span>
-                    </li>
+            {files.length > 0 && (
+              <div className="mt-8 space-y-4">
+                <h4 className="font-semibold text-sm">File Configuration</h4>
+                <div className="space-y-3">
+                  {files.map(f => (
+                    <div key={f.name} className="flex items-center justify-between bg-muted/50 p-3 rounded-lg border">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <FileText className="text-primary/70 shrink-0" size={18} />
+                        <span className="text-sm font-medium truncate">{f.name}</span>
+                      </div>
+                      <div className="w-48 shrink-0">
+                        <Select value={transactionTypes[f.name] || "auto"} onValueChange={(val) => handleTypeChange(f.name, val)}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Loại giao dịch" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auto">Tự động (Auto)</SelectItem>
+                            <SelectItem value="Nhập khẩu">Nhập khẩu</SelectItem>
+                            <SelectItem value="Xuất khẩu">Xuất khẩu</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                   ))}
-                  <div className="animate-pulse inline-block w-2 h-4 bg-primary/50 ml-1 translate-y-1"></div>
-                </ul>
-              ) : (
-                <p className="text-muted-foreground italic">Waiting for logs...</p>
-              )}
-            </div>
+                </div>
+
+                <div className="pt-4 flex justify-center">
+                  <Button onClick={handleProcess} className="w-full max-w-sm h-12 text-lg font-semibold">
+                    <PlayCircle className="mr-2" /> Start Batch Processing
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {result && (
+      {/* Processing / Done Phase */}
+      {(batchStatus || loading) && (
         <div className="space-y-6">
-          <Card className="border-green-500/20 bg-green-500/5">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="size-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-600">
-                  <CheckCircle2 className="size-6" />
-                </div>
-                <div>
-                  <CardTitle className="text-green-700">Success!</CardTitle>
-                  <CardDescription className="text-green-600/80">Your dataset has been successfully processed.</CardDescription>
-                </div>
+          <Card className="max-w-3xl mx-auto">
+            <CardHeader className="flex flex-row items-center justify-between pb-4">
+              <div>
+                <CardTitle>Batch Processing Queue</CardTitle>
+                <CardDescription>Files are being processed sequentially</CardDescription>
               </div>
-              <div className="flex gap-3">
-                <Button variant="default" className="bg-green-600 hover:bg-green-700" asChild>
-                  <a href={`${API_BASE}/api/jobs/${result.jobId}/download?token=${localStorage.getItem('token')}`}>
-                    <Download className="size-4 mr-2" />
-                    Download Result
-                  </a>
-                </Button>
-                <Button variant="outline" onClick={resetPage}>Process Another</Button>
-              </div>
+              {batchStatus?.status === 'done' && (
+                <Badge className="bg-green-500 hover:bg-green-600">Completed</Badge>
+              )}
+              {(!batchStatus || batchStatus?.status === 'processing') && (
+                <Badge variant="outline" className="text-blue-500 border-blue-500/30 bg-blue-500/10">Processing...</Badge>
+              )}
             </CardHeader>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>Data Preview</CardTitle>
-              <CardDescription>Showing first few rows of the cleaned data</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border overflow-hidden">
-                <div className="overflow-x-auto max-h-[500px]">
-                  <Table className="relative">
-                    <TableHeader className="sticky top-0 bg-background z-10 border-b">
-                      <TableRow>
-                        {result.preview.length > 0 && Object.keys(result.preview[0]).map(col => (
-                          <TableHead key={col} className="whitespace-nowrap">{col}</TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {result.preview.map((row, i) => (
-                        <TableRow key={i}>
-                          {Object.keys(row).map(col => (
-                            <TableCell key={col} className="whitespace-nowrap max-w-[300px] truncate">{row[col]}</TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+            <CardContent className="space-y-4">
+              {!batchStatus ? (
+                <div className="py-8 flex justify-center"><RefreshCw className="animate-spin text-primary" /></div>
+              ) : (
+                <div className="space-y-3">
+                  {batchStatus.jobs.map((job: any) => (
+                    <div key={job.id} className="flex items-center justify-between p-4 rounded-lg border bg-card">
+                      <div className="flex items-center gap-4">
+                        {job.status === 'done' ? (
+                          <div className="rounded-full p-1.5 bg-green-500/20 text-green-600"><Check size={16} /></div>
+                        ) : job.status === 'processing' ? (
+                          <div className="rounded-full p-1.5 bg-blue-500/20 text-blue-600"><RefreshCw size={16} className="animate-spin" /></div>
+                        ) : job.status === 'error' ? (
+                          <div className="rounded-full p-1.5 bg-red-500/20 text-red-600"><AlertCircle size={16} /></div>
+                        ) : (
+                          <div className="rounded-full p-1.5 bg-muted text-muted-foreground"><Clock size={16} /></div>
+                        )}
+                        <div>
+                          <p className="font-medium text-sm">{job.filename}</p>
+                          {job.error_message ? (
+                            <p className="text-xs text-red-500 mt-0.5">{job.error_message}</p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                              {job.status} • {job.transaction_type || 'Auto-detected'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {job.status === 'done' && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={`${API_URL}/api/jobs/${job.id}/download?token=${localStorage.getItem('token')}`}>
+                            <Download className="mr-2 size-4" /> Download
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
+
+          {batchStatus?.status === 'done' && (
+            <Card className="max-w-3xl mx-auto border-green-500/20 bg-green-500/5">
+              <CardContent className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="size-10 rounded-full bg-green-500/20 flex items-center justify-center text-green-600">
+                    <CheckCircle className="size-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-green-700">Batch Complete</h3>
+                    <p className="text-sm text-green-600/80">All files have been processed and sanitized.</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <BatchPreviewDialog batchId={batchStatus.id} />
+                  <Button variant="outline" onClick={resetPage}>New Batch</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </div>

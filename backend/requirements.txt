@@ -17,5 +17,8 @@ python-jose[cryptography]
 psycopg2-binary
 pyahocorasick
 pyvi
-groq
+requests
 python-dotenv
+httpx
+beautifulsoup4
+openai>=1.0.0

@@ -4,6 +4,8 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const Register = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +25,7 @@ const Register = () => {
     setError('');
 
     try {
-      const res = await fetch('http://localhost:8000/api/auth/register', {
+      const res = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -32,7 +34,14 @@ const Register = () => {
       if (res.ok) {
         navigate('/auth/login');
       } else {
-        setError(data.detail || 'Registration failed');
+        const errorDetail = data.detail;
+        if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (Array.isArray(errorDetail)) {
+          setError(errorDetail[0]?.msg || 'Registration failed');
+        } else {
+          setError('Registration failed');
+        }
       }
     } catch (err) {
       setError('Connection to server failed');

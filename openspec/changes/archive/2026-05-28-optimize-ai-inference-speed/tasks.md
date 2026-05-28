@@ -17,5 +17,5 @@
 
 ## 4. Validation
 
-- [ ] 4.1 Run a benchmark with 19,000+ rows and compare against the 30-minute baseline.
-- [ ] 4.2 Verify that output quality remains consistent (no regression in labels).
+- [x] 4.1 Run a benchmark with 19,000+ rows and compare against the 30-minute baseline.
+- [x] 4.2 Verify that output quality remains consistent (no regression in labels).
