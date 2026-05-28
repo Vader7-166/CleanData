@@ -304,12 +304,15 @@ class DictionaryGenerator:
         if hs_code in self.hs_type_map: return self.hs_type_map[hs_code]
         return 'LK' if hits >= 1 else 'NC'
 
-    def label_clusters_llm(self, names_tfidf, data, batch_size=15):
+    def label_clusters_llm(self, names_tfidf, data, batch_size=15, progress_callback=None):
         if not self.deepseek_api_key: return names_tfidf
         try:
             lbls = [l for l in names_tfidf.keys() if l != -1]
             res = {l: names_tfidf[l] for l in names_tfidf.keys() if l == -1}
-            print(f"DEBUG: Starting DeepSeek LLM labeling for {len(lbls)} clusters in {len(lbls)//batch_size + 1} batches")
+            total_batches = len(lbls)//batch_size + (1 if len(lbls) % batch_size != 0 else 0)
+            if total_batches == 0:
+                total_batches = 1
+            print(f"DEBUG: Starting DeepSeek LLM labeling for {len(lbls)} clusters in {total_batches} batches")
             
             headers = {
                 "Authorization": f"Bearer {self.deepseek_api_key}",
@@ -317,6 +320,9 @@ class DictionaryGenerator:
             }
             
             for i in range(0, len(lbls), batch_size):
+                batch_idx = i//batch_size + 1
+                if progress_callback:
+                    progress_callback(batch_idx, total_batches, f"LLM Labeling batch {batch_idx} of {total_batches}...")
                 batch = lbls[i:i+batch_size]
                 prompt = "Bạn là chuyên gia phân loại hàng hóa hải quan. Hãy đặt TÊN DANH MỤC ngắn gọn, có ý nghĩa cho các nhóm sản phẩm sau.\n\n"
                 prompt += "YÊU CẦU:\n"
@@ -358,7 +364,7 @@ class DictionaryGenerator:
             print(f"DEBUG: LLM labeling global fail: {e}")
             return names_tfidf
 
-    def generate_draft_taxonomy(self, raw_df, eps=0.70, min_samples=8, use_llm=True):
+    def generate_draft_taxonomy(self, raw_df, eps=0.70, min_samples=8, use_llm=True, progress_callback=None):
         raw_df = raw_df.copy()
         # Clean HS_Code column: remove dots and non-digits
         raw_df['HS_Code'] = raw_df['HS_Code'].astype(str).apply(lambda x: re.sub(r'\D', '', x))
@@ -368,8 +374,16 @@ class DictionaryGenerator:
         raw_df = raw_df[raw_df['_tok'].str.len() > 0].reset_index(drop=True)
         
         all_rows = []
-        for hs in sorted(raw_df['HS_Code'].unique()):
+        unique_hs = sorted(raw_df['HS_Code'].unique())
+        total_hs = len(unique_hs)
+        hs_idx = 0
+        
+        for hs in unique_hs:
             if not hs: continue
+            hs_idx += 1
+            if progress_callback:
+                progress_callback(hs_idx, total_hs, f"Processing HS Code {hs} ({hs_idx}/{total_hs})...")
+            
             sub = raw_df[raw_df['HS_Code'] == hs].copy()
             lbls = self.cluster_products(sub['_tok'].tolist(), eps, min_samples)
             raw_df.loc[sub.index, '_cluster'] = lbls
@@ -398,7 +412,7 @@ class DictionaryGenerator:
             
             non_out = {l: v for l, v in c_data.items() if l != -1}
             names = self.get_cluster_names_tfidf(non_out)
-            if use_llm: names = self.label_clusters_llm(names, non_out)
+            if use_llm: names = self.label_clusters_llm(names, non_out, progress_callback=progress_callback)
             if -1 in c_data: names[-1] = f"[OUTLIER] {self.get_cluster_name_fallback(c_data[-1]['prods'], c_data[-1]['raw'], 3)}"
 
             for l in sorted(set(lbls)):

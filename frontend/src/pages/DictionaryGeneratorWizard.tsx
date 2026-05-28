@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Upload, CheckCircle, BrainCircuit, AlertCircle, Sparkles, RefreshCw, Database } from 'lucide-react';
 import usePersistedState from '../hooks/usePersistedState';
 import { Button } from '../components/ui/button';
@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { cn } from '../components/ui/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { useFileContext } from '../contexts/FileContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -18,12 +19,13 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
   const [success, setSuccess] = useState('');
 
   // Step 1 State
-  const [rawFile, setRawFile] = useState<File | null>(null);
+  const { dictionaryRawFiles: rawFiles, setDictionaryRawFiles: setRawFiles, dictionaryDraftFile: reviewedDraftFile, setDictionaryDraftFile: setReviewedDraftFile } = useFileContext();
   const [persistedRawFileName, setPersistedRawFileName] = usePersistedState('wizard_raw_filename', '');
   const [useLlm, setUseLlm] = usePersistedState('wizard_use_llm', true);
+  const [jobId, setJobId] = usePersistedState('wizard_job_id', '');
+  const [jobProgress, setJobProgress] = useState<{current: number, total: number, message: string} | null>(null);
 
   // Step 2 State
-  const [reviewedDraftFile, setReviewedDraftFile] = useState<File | null>(null);
   const [persistedDraftFileName, setPersistedDraftFileName] = usePersistedState('wizard_draft_filename', '');
   const [dictName, setDictName] = usePersistedState('wizard_dict_name', '');
   // HS Code interception state
@@ -32,6 +34,65 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
   const [hsCheckLoading, setHsCheckLoading] = useState(false);
   const pendingStep1Ref = useRef(false);
 
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (jobId && step === 1) {
+      setLoading(true);
+      interval = setInterval(async () => {
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch(`${API_URL}/api/dictionaries/generate/status/${jobId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setJobProgress(data.progress);
+            if (data.status === 'done') {
+              clearInterval(interval);
+              setLoading(false);
+              setJobId('');
+              
+              const dlRes = await fetch(`${API_URL}/api/dictionaries/generate/download/${jobId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (dlRes.ok) {
+                const blob = await dlRes.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `draft_taxonomy_${jobId.substring(0,8)}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                setSuccess('Draft generated! Please review the Excel file, then proceed to Step 2.');
+                setStep(2);
+              } else {
+                setError('Failed to download generated draft.');
+              }
+            } else if (data.status === 'error') {
+              clearInterval(interval);
+              setLoading(false);
+              setJobId('');
+              setError(`Generation failed: ${data.error_message}`);
+            }
+          } else {
+             if (res.status === 404) {
+               clearInterval(interval);
+               setLoading(false);
+               setJobId('');
+             }
+          }
+        } catch (err) {
+          console.error("Polling error", err);
+        }
+      }, 2000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [jobId, step]);
+
   const DONG_SP_OPTIONS = [
     'SP BÌNH/PHÍCH', 'SP THỦY TINH', 'SP ĐÈN/BÓNG ĐÈN',
     'SP ĐÈN/THIẾT BỊ CHIẾU SÁNG', 'SP THIẾT BỊ ĐIỆN GIA DỤNG',
@@ -39,11 +100,13 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
 
   const resetWizard = () => {
     setStep(1);
-    setRawFile(null);
+    setRawFiles([]);
     setPersistedRawFileName('');
     setReviewedDraftFile(null);
     setPersistedDraftFileName('');
     setDictName('');
+    setJobId('');
+    setJobProgress(null);
     setSuccess('');
     setError('');
   };
@@ -87,12 +150,12 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
   };
 
   const proceedWithStep1 = async () => {
-    if (!rawFile) return;
+    if (rawFiles.length === 0) return;
     setLoading(true);
     setError('');
     
     const formData = new FormData();
-    formData.append('file', rawFile);
+    rawFiles.forEach(file => formData.append('files', file));
 
     try {
       const token = localStorage.getItem('token');
@@ -103,35 +166,26 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
       });
       
       if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const filename = res.headers.get('Content-Disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'draft_taxonomy.xlsx';
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        
-        setSuccess('Draft generated! Please review the Excel file, then proceed to Step 2.');
-        setStep(2);
+        const data = await res.json();
+        setJobId(data.job_id);
+        // Polling effect handles the rest
       } else {
         const data = await res.json();
         const errorDetail = data.detail;
         if (typeof errorDetail === 'string') setError(errorDetail);
         else if (Array.isArray(errorDetail)) setError(errorDetail[0]?.msg || 'Action failed');
         else setError('Action failed');
+        setLoading(false);
       }
     } catch (err) {
       setError('An error occurred during Step 1.');
-    } finally {
       setLoading(false);
     }
   };
 
   const handleStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rawFile) {
+    if (rawFiles.length === 0) {
       setError('Please provide raw file.');
       return;
     }
@@ -140,8 +194,13 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
     setError('');
 
     try {
-      // Extract HS codes from raw file and check against DB
-      const hsCodes = await extractHsCodesFromFile(rawFile);
+      // Extract HS codes from raw files and check against DB
+      let allHsCodes: string[] = [];
+      for (const file of rawFiles) {
+          const codes = await extractHsCodesFromFile(file);
+          allHsCodes = [...allHsCodes, ...codes];
+      }
+      const hsCodes = Array.from(new Set(allHsCodes));
       
       if (hsCodes.length > 0) {
         const token = localStorage.getItem('token');
@@ -219,7 +278,7 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
 
   const handleStep2 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rawFile || !reviewedDraftFile || !dictName) {
+    if (rawFiles.length === 0 || !reviewedDraftFile || !dictName) {
       setError('Please provide all required files and dictionary name.');
       return;
     }
@@ -228,7 +287,7 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
     setError('');
     
     const formData = new FormData();
-    formData.append('raw_file', rawFile);
+    rawFiles.forEach(file => formData.append('raw_files', file));
     formData.append('draft_file', reviewedDraftFile);
 
     try {
@@ -312,23 +371,27 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
             <div className="space-y-4">
               <div className={cn(
                 "border-2 border-dashed rounded-xl p-8 text-center transition-all",
-                rawFile ? "border-primary bg-primary/5" : "border-border"
+                rawFiles.length > 0 ? "border-primary bg-primary/5" : "border-border"
               )}>
                 <Upload className="size-8 text-primary mx-auto mb-4" />
                 <div className="space-y-2">
-                  {persistedRawFileName && !rawFile ? (
+                  {persistedRawFileName && rawFiles.length === 0 ? (
                     <p className="text-sm font-medium text-orange-600 italic">Previous session: {persistedRawFileName}</p>
                   ) : null}
-                  <Button variant={rawFile ? "outline" : "default"} size="sm" asChild>
+                  <Button variant={rawFiles.length > 0 ? "outline" : "default"} size="sm" asChild>
                     <label className="cursor-pointer">
-                      {rawFile || persistedRawFileName ? "Change File" : "Select Raw Data"}
-                      <input type="file" accept=".xlsx,.csv" className="hidden" onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) { setRawFile(f); setPersistedRawFileName(f.name); setError(''); }
+                      {rawFiles.length > 0 || persistedRawFileName ? "Change Files" : "Select Raw Data"}
+                      <input type="file" multiple accept=".xlsx,.csv" className="hidden" onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          const fArray = Array.from(e.target.files);
+                          setRawFiles(fArray); 
+                          setPersistedRawFileName(fArray.map(f => f.name).join(', ')); 
+                          setError(''); 
+                        }
                       }} />
                     </label>
                   </Button>
-                  <p className="text-xs text-muted-foreground">{rawFile ? rawFile.name : "Excel (.xlsx) or CSV"}</p>
+                  <p className="text-xs text-muted-foreground">{rawFiles.length > 0 ? `${rawFiles.length} files selected` : "Excel (.xlsx) or CSV"}</p>
                 </div>
               </div>
 
@@ -349,10 +412,24 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
               </div>
             </div>
 
-            <Button type="submit" className="w-full h-12 gap-2" disabled={loading || !rawFile}>
+            <Button type="submit" className="w-full h-12 gap-2" disabled={loading || rawFiles.length === 0}>
               {loading ? <RefreshCw className="size-5 animate-spin" /> : <Sparkles className="size-5" />}
-              {loading ? "AI is processing..." : "Generate & Download Draft"}
+              {loading ? "AI is processing..." : "Generate AI Draft"}
             </Button>
+            
+            {loading && jobProgress && (
+              <div className="mt-4 space-y-2">
+                <div className="text-sm font-medium text-center">{jobProgress.message}</div>
+                {jobProgress.total > 0 && (
+                  <div className="w-full bg-secondary rounded-full h-2.5">
+                    <div 
+                      className="bg-primary h-2.5 rounded-full transition-all duration-500" 
+                      style={{ width: `${Math.min(100, Math.max(0, (jobProgress.current / jobProgress.total) * 100))}%` }}
+                    ></div>
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         ) : (
           <form onSubmit={handleStep2} className="space-y-8">
@@ -362,18 +439,21 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div className={cn("border rounded-lg p-4 space-y-3", rawFile ? "bg-muted/10 border-green-500/30" : "border-destructive/30 bg-destructive/5")}>
+               <div className={cn("border rounded-lg p-4 space-y-3", rawFiles.length > 0 ? "bg-muted/10 border-green-500/30" : "border-destructive/30 bg-destructive/5")}>
                   <div className="flex items-center justify-between">
                     <h5 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Raw Data</h5>
-                    {rawFile && <CheckCircle className="size-4 text-green-500" />}
+                    {rawFiles.length > 0 && <CheckCircle className="size-4 text-green-500" />}
                   </div>
-                  <p className="text-sm font-medium truncate">{rawFile ? rawFile.name : persistedRawFileName || "Missing File"}</p>
+                  <p className="text-sm font-medium truncate">{rawFiles.length > 0 ? `${rawFiles.length} files` : persistedRawFileName || "Missing File"}</p>
                   <Button variant="outline" size="sm" className="w-full text-[10px] h-7" asChild>
                     <label className="cursor-pointer">
-                      Relink File
-                      <input type="file" accept=".xlsx,.csv" className="hidden" onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) { setRawFile(f); setPersistedRawFileName(f.name); }
+                      Relink Files
+                      <input type="file" multiple accept=".xlsx,.csv" className="hidden" onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          const fArray = Array.from(e.target.files);
+                          setRawFiles(fArray); 
+                          setPersistedRawFileName(fArray.map(f => f.name).join(', '));
+                        }
                       }} />
                     </label>
                   </Button>
@@ -408,7 +488,7 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
 
             <div className="flex gap-4 pt-2">
               <Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1">Back</Button>
-              <Button type="submit" className="flex-[2] gap-2 bg-green-600 hover:bg-green-700 text-white" disabled={loading || !rawFile || !reviewedDraftFile || !dictName}>
+              <Button type="submit" className="flex-[2] gap-2 bg-green-600 hover:bg-green-700 text-white" disabled={loading || rawFiles.length === 0 || !reviewedDraftFile || !dictName}>
                 {loading ? <RefreshCw className="size-5 animate-spin" /> : <CheckCircle className="size-5" />}
                 {loading ? "Extracting..." : "Finalize & Save"}
               </Button>

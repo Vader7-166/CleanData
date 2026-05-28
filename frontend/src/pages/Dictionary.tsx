@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
+import { Checkbox } from '../components/ui/checkbox';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -20,6 +21,30 @@ const Dictionary = () => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkActivate = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      const token = localStorage.getItem('token');
+      for (const id of selectedIds) {
+        await fetch(`${API_URL}/api/dictionaries/${id}/activate`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      }
+      setSelectedIds([]);
+      fetchDictionaries();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchDictionaries = async () => {
     try {
@@ -217,7 +242,15 @@ const Dictionary = () => {
       </Card>
 
       <div className="space-y-4">
-        <h3 className="text-xl font-bold">Available Dictionaries</h3>
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-bold">Available Dictionaries</h3>
+          {selectedIds.length > 0 && (
+            <Button onClick={handleBulkActivate} size="sm" className="gap-2">
+              <CheckCircle className="size-4" />
+              Activate Selected ({selectedIds.length})
+            </Button>
+          )}
+        </div>
         
         {dictionaries.length === 0 ? (
           <Card className="border-dashed">
@@ -235,17 +268,25 @@ const Dictionary = () => {
                 <CardContent className="p-6">
                   <div className="flex flex-col h-full gap-4">
                     <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold truncate max-w-[200px]" title={dict.filename}>{dict.filename}</h4>
-                          {dict.is_active && <Badge className="bg-primary hover:bg-primary">Active</Badge>}
+                      <div className="flex items-start gap-3">
+                        <div className="pt-1">
+                          <Checkbox 
+                            checked={selectedIds.includes(dict.id)}
+                            onCheckedChange={() => toggleSelect(dict.id)}
+                          />
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1"><Calendar className="size-3" /> {new Date(dict.created_at).toLocaleDateString()}</span>
-                          <span className="flex items-center gap-1"><Activity className="size-3" /> {stats[dict.id] || 0} uses</span>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold truncate max-w-[160px]" title={dict.filename}>{dict.filename}</h4>
+                            {dict.is_active && <Badge className="bg-primary hover:bg-primary">Active</Badge>}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1"><Calendar className="size-3" /> {new Date(dict.created_at).toLocaleDateString()}</span>
+                            <span className="flex items-center gap-1"><Activity className="size-3" /> {stats[dict.id] || 0} uses</span>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 shrink-0">
                         <Button variant="outline" size="icon" className="size-8" onClick={() => handleDownload(dict.id, dict.filename)} title="Download">
                           <Download className="size-4" />
                         </Button>

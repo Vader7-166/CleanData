@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import BatchPreviewDialog from '../components/BatchPreviewDialog';
+import { useFileContext } from '../contexts/FileContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const CleanData = () => {
-  const [files, setFiles] = useState<File[]>([]);
+  const { cleanDataFiles: files, setCleanDataFiles: setFiles } = useFileContext();
   const [transactionTypes, setTransactionTypes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

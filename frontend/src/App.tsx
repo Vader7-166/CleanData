@@ -10,6 +10,8 @@ import Dictionary from './pages/Dictionary';
 import DictionaryGenerator from './pages/DictionaryGenerator';
 import HSTaxonomy from './pages/HSTaxonomy';
 
+import { FileProvider } from './contexts/FileContext';
+
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
 
@@ -20,24 +22,26 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthLayout />}>
-          <Route path="login" element={<Login setToken={setToken} />} />
-          <Route path="register" element={<Register />} />
-          <Route index element={<Navigate to="login" replace />} />
-        </Route>
+    <FileProvider>
+      <Router>
+        <Routes>
+          <Route path="/auth" element={token ? <Navigate to="/" replace /> : <AuthLayout />}>
+            <Route path="login" element={<Login setToken={setToken} />} />
+            <Route path="register" element={<Register />} />
+            <Route index element={<Navigate to="login" replace />} />
+          </Route>
 
-        <Route path="/" element={token ? <MainLayout setToken={setToken} /> : <Navigate to="/auth/login" replace />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="clean" element={<CleanData />} />
-          <Route path="dictionary" element={<Dictionary />} />
-          <Route path="dictionary/generate" element={<DictionaryGenerator />} />
-          <Route path="taxonomy" element={<HSTaxonomy />} />
-        </Route>
-      </Routes>
-    </Router>
+          <Route path="/" element={token ? <MainLayout setToken={setToken} /> : <Navigate to="/auth/login" replace />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="clean" element={<CleanData />} />
+            <Route path="dictionary" element={<Dictionary />} />
+            <Route path="dictionary/generate" element={<DictionaryGenerator />} />
+            <Route path="taxonomy" element={<HSTaxonomy />} />
+          </Route>
+        </Routes>
+      </Router>
+    </FileProvider>
   );
 }
 

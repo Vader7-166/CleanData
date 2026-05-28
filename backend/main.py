@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, status, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, status, Query, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -32,6 +32,10 @@ PROCESSED_STORAGE_PATH = "backend/storage/processed"
 DICTIONARY_STORAGE_PATH = "backend/storage/dictionaries"
 os.makedirs(PROCESSED_STORAGE_PATH, exist_ok=True)
 os.makedirs(DICTIONARY_STORAGE_PATH, exist_ok=True)
+
+ACTIVE_GEN_JOBS = {}
+TEMP_DRAFT_STORAGE_PATH = "backend/storage/temp_drafts"
+os.makedirs(TEMP_DRAFT_STORAGE_PATH, exist_ok=True)
 
 from sqlalchemy import text
 try:
@@ -752,6 +756,9 @@ def delete_dictionary(dict_id: int, current_user: models.User = Depends(auth.get
     if os.path.exists(path):
         os.remove(path)
         
+    db.query(models.DictionaryUsage).filter(models.DictionaryUsage.dictionary_id == dict_id).delete()
+    db.query(models.ProcessingJob).filter(models.ProcessingJob.dictionary_id == dict_id).update({"dictionary_id": None})
+        
     db.delete(d)
     db.commit()
     
@@ -1110,64 +1117,116 @@ def _load_db_taxonomy():
     finally:
         db.close()
 
-@app.post("/api/dictionaries/generate/step1")
-async def generate_draft(
-    file: UploadFile = File(...),
-    use_llm: bool = Query(True),
-    current_user: models.User = Depends(auth.get_current_user)
-):
-    """Step 1: Raw Upload -> Draft Excel with 3 sheets"""
-    if not file.filename.endswith(('.xlsx', '.csv')):
-        raise HTTPException(status_code=400, detail="Invalid file format. Please upload .xlsx or .csv")
-        
+def run_generation_task(job_id: str, raw_df: pd.DataFrame, use_llm: bool, deepseek_api_key: str, db_taxonomy: list):
     try:
-        content = await file.read()
-        raw_df = load_robust_df(content, file.filename)
+        ACTIVE_GEN_JOBS[job_id]["status"] = "processing"
+        
+        def progress_callback(current, total, message):
+            if job_id in ACTIVE_GEN_JOBS:
+                ACTIVE_GEN_JOBS[job_id]["progress"] = {"current": current, "total": total, "message": message}
             
         generator = DictionaryGenerator(
-            deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
-            db_taxonomy=_load_db_taxonomy()
+            deepseek_api_key=deepseek_api_key,
+            db_taxonomy=db_taxonomy
         )
         
-        # Run clustering in a separate thread
-        draft_df, processed_raw_df = await asyncio.to_thread(
-            generator.generate_draft_taxonomy, 
+        draft_df, processed_raw_df = generator.generate_draft_taxonomy(
             raw_df, 
-            use_llm=use_llm
+            use_llm=use_llm,
+            progress_callback=progress_callback
         )
         
-        # Convert draft_df to Excel in memory with 3 sheets (to match original repo)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Sheet 1: Phân loại (để review)
             df_export = draft_df[['Keyword', 'Mã HS', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Cluster_ID']].copy()
             df_export.to_excel(writer, sheet_name='Phân loại', index=False)
-            
-            # Sheet 2: Chi tiết (để tham khảo)
             draft_df.to_excel(writer, sheet_name='Chi tiết Cluster', index=False)
-            
-            # Sheet 3: Dữ liệu raw đã gán cluster
             df_raw_export = processed_raw_df[['HS_Code', 'Detailed_Product', '_clean', '_cluster']].copy()
             df_raw_export.columns = ['Mã HS', 'Tên hàng gốc', 'Đã làm sạch', 'Cluster_ID']
             df_raw_export.to_excel(writer, sheet_name='Raw + Cluster', index=False)
             
-        output.seek(0)
-        
-        headers = {
-            'Content-Disposition': f'attachment; filename="draft_taxonomy_{uuid.uuid4().hex[:8]}.xlsx"'
-        }
-        return StreamingResponse(
-            output, 
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers=headers
-        )
+        temp_file_path = os.path.join(TEMP_DRAFT_STORAGE_PATH, f"{job_id}.xlsx")
+        with open(temp_file_path, "wb") as f:
+            f.write(output.getvalue())
+            
+        ACTIVE_GEN_JOBS[job_id]["status"] = "done"
+        ACTIVE_GEN_JOBS[job_id]["result_file"] = temp_file_path
+        ACTIVE_GEN_JOBS[job_id]["progress"]["message"] = "Completed"
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error generating draft: {str(e)}")
+        if job_id in ACTIVE_GEN_JOBS:
+            ACTIVE_GEN_JOBS[job_id]["status"] = "error"
+            ACTIVE_GEN_JOBS[job_id]["error_message"] = str(e)
+
+@app.post("/api/dictionaries/generate/step1")
+async def generate_draft(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    use_llm: bool = Query(True),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """Step 1: Raw Upload -> Initiate Background Task"""
+    all_dfs = []
+    for file in files:
+        if not file.filename.endswith(('.xlsx', '.csv')):
+            continue
+        content = await file.read()
+        df = load_robust_df(content, file.filename)
+        all_dfs.append(df)
+        
+    if not all_dfs:
+        raise HTTPException(status_code=400, detail="No valid .xlsx or .csv files uploaded")
+        
+    try:
+        raw_df = pd.concat(all_dfs, ignore_index=True)
+        job_id = uuid.uuid4().hex
+        
+        ACTIVE_GEN_JOBS[job_id] = {
+            "status": "pending",
+            "progress": {"current": 0, "total": 0, "message": "Initializing..."},
+            "result_file": None,
+            "error_message": None
+        }
+        
+        background_tasks.add_task(
+            run_generation_task,
+            job_id=job_id,
+            raw_df=raw_df,
+            use_llm=use_llm,
+            deepseek_api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            db_taxonomy=_load_db_taxonomy()
+        )
+        
+        return {"job_id": job_id, "message": "Generation started in background"}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error initiating draft generation: {str(e)}")
+
+@app.get("/api/dictionaries/generate/status/{job_id}")
+def get_generation_status(job_id: str, current_user: models.User = Depends(auth.get_current_user)):
+    job = ACTIVE_GEN_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    return {"job_id": job_id, **job}
+
+@app.get("/api/dictionaries/generate/download/{job_id}")
+def download_generation_draft(job_id: str, current_user: models.User = Depends(auth.get_current_user)):
+    job = ACTIVE_GEN_JOBS.get(job_id)
+    if not job or job["status"] != "done" or not job["result_file"]:
+        raise HTTPException(status_code=404, detail="Result not available")
+    
+    file_path = job["result_file"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+        
+    headers = {
+        'Content-Disposition': f'attachment; filename="draft_taxonomy_{job_id[:8]}.xlsx"'
+    }
+    return FileResponse(file_path, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 @app.post("/api/dictionaries/generate/step2")
 async def finalize_dictionary(
-    raw_file: UploadFile = File(...),
+    raw_files: List[UploadFile] = File(...),
     draft_file: UploadFile = File(...),
     dictionary_name: str = Query(...),
     current_user: models.User = Depends(auth.get_current_user),
@@ -1179,10 +1238,14 @@ async def finalize_dictionary(
         
     print(f"DEBUG: Finalizing dictionary {dictionary_name} for user {current_user.username}")
     try:
-        # Read raw file using robust loader
-        raw_content = await raw_file.read()
-        raw_df = load_robust_df(raw_content, raw_file.filename)
-        print(f"DEBUG: Raw file loaded: {len(raw_df)} rows")
+        # Read raw files using robust loader
+        all_raw_dfs = []
+        for file in raw_files:
+            raw_content = await file.read()
+            df = load_robust_df(raw_content, file.filename)
+            all_raw_dfs.append(df)
+        raw_df = pd.concat(all_raw_dfs, ignore_index=True)
+        print(f"DEBUG: Raw files loaded: {len(raw_df)} rows")
             
         # Read reviewed draft file
         draft_content = await draft_file.read()
