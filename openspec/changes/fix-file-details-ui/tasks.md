@@ -12,6 +12,6 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Test the modal with a large dataset to ensure scrolling works.
-- [ ] 3.2 Test the modal on different screen sizes to ensure responsiveness.
-- [ ] 3.3 Verify text readability across all sections of the modal.
+- [x] 3.1 Test the modal with a large dataset to ensure scrolling works.
+- [x] 3.2 Test the modal on different screen sizes to ensure responsiveness.
+- [x] 3.3 Verify text readability across all sections of the modal.
