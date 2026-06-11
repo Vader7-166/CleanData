@@ -249,8 +249,8 @@ class DictionaryGenerator:
         v = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1, max_df=0.95)
         try:
             m = v.fit_transform(descriptions)
-            d = cosine_distances(m)
-            return DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed').fit_predict(d)
+            eps_euclid = np.sqrt(2 * eps)
+            return DBSCAN(eps=eps_euclid, min_samples=min_samples, metric='euclidean', algorithm='brute').fit_predict(m)
         except: return np.array([0] * len(descriptions))
 
     def get_cluster_name_fallback(self, products, raw_descriptions=None, top_n=4):
