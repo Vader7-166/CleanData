@@ -381,7 +381,7 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
                   <Button variant={rawFiles.length > 0 ? "outline" : "default"} size="sm" asChild>
                     <label className="cursor-pointer">
                       {rawFiles.length > 0 || persistedRawFileName ? "Change Files" : "Select Raw Data"}
-                      <input type="file" multiple accept=".xlsx,.csv" className="hidden" onChange={(e) => {
+                      <input type="file" multiple accept=".xlsx,.csv,.xls" className="hidden" onChange={(e) => {
                         if (e.target.files && e.target.files.length > 0) {
                           const fArray = Array.from(e.target.files);
                           setRawFiles(fArray); 
@@ -448,7 +448,7 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
                   <Button variant="outline" size="sm" className="w-full text-[10px] h-7" asChild>
                     <label className="cursor-pointer">
                       Relink Files
-                      <input type="file" multiple accept=".xlsx,.csv" className="hidden" onChange={(e) => {
+                      <input type="file" multiple accept=".xlsx,.csv,.xls" className="hidden" onChange={(e) => {
                         if (e.target.files && e.target.files.length > 0) {
                           const fArray = Array.from(e.target.files);
                           setRawFiles(fArray); 
@@ -468,7 +468,7 @@ const DictionaryGeneratorWizard = ({ onComplete }: { onComplete: () => void }) =
                   <Button variant={reviewedDraftFile ? "outline" : "default"} size="sm" className="w-full text-[10px] h-7" asChild>
                     <label className="cursor-pointer">
                       {reviewedDraftFile ? "Change Draft" : "Select Draft"}
-                      <input type="file" accept=".xlsx" className="hidden" onChange={(e) => {
+                      <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => {
                         const f = e.target.files?.[0];
                         if (f) { setReviewedDraftFile(f); setPersistedDraftFileName(f.name); }
                       }} />

@@ -212,7 +212,7 @@ async def upload_files(
     processed_any = False
     
     for file in files:
-        if not file.filename.endswith(('.csv', '.xlsx')):
+        if not file.filename.endswith(('.csv', '.xlsx', '.xls')):
             continue
             
         t_type = types_map.get(file.filename)
@@ -474,7 +474,7 @@ def download_batch_merged(batch_id: str, current_user: models.User = Depends(get
         path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job.id}_{job.filename}")
         if os.path.exists(path):
             try:
-                df = pd.read_excel(path) if path.endswith('.xlsx') else pd.read_csv(path)
+                df = pd.read_excel(path) if path.endswith(('.xlsx', '.xls')) else pd.read_csv(path)
                 df['Tên file nguồn'] = job.filename
                 all_dfs.append(df)
             except Exception:
@@ -536,7 +536,7 @@ def batch_insights(batch_id: str, current_user: models.User = Depends(auth.get_c
             try:
                 # pandas usecols requires columns to exist. If a column is missing, it will throw an error.
                 # So we read all and then filter.
-                df = pd.read_excel(path) if path.endswith('.xlsx') else pd.read_csv(path)
+                df = pd.read_excel(path) if path.endswith(('.xlsx', '.xls')) else pd.read_csv(path)
                 keep_cols = [c for c in ['Dòng SP', 'Loại', 'Công ty NK', 'Công ty XK', 'Giá trị', 'Loại giao dịch', 'Trạng Thái', 'Lớp 1'] if c in df.columns]
                 df = df[keep_cols]
                 all_dfs.append(df)
@@ -1176,7 +1176,7 @@ async def generate_draft(
     """Step 1: Raw Upload -> Initiate Background Task"""
     all_dfs = []
     for file in files:
-        if not file.filename.endswith(('.xlsx', '.csv')):
+        if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
             continue
         content = await file.read()
         df = load_robust_df(content, file.filename)
