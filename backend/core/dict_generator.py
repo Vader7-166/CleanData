@@ -211,6 +211,16 @@ class DictionaryGenerator:
         self.vi_stopwords = VI_STOPWORDS
         self.label_stopwords = LABEL_STOPWORDS
         
+        self.official_taxonomy = {}
+        official_json_path = os.path.join(os.path.dirname(__file__), "..", "data", "official_hs_taxonomy.json")
+        try:
+            if os.path.exists(official_json_path):
+                with open(official_json_path, 'r', encoding='utf-8') as f:
+                    self.official_taxonomy = json.load(f)
+        except Exception as e:
+            print(f"DEBUG: Error loading official taxonomy: {e}")
+            
+
         if db_taxonomy:
             # Build dynamic lookups from database records
             self.hs_taxonomy = {r['hs_code_prefix']: r['industry_name'] for r in db_taxonomy}
@@ -465,13 +475,25 @@ class DictionaryGenerator:
 
             lop1 = self.hs_taxonomy.get(hs)
             if not lop1:
-                # Prefix matching logic
+                # Prefix matching logic (User DB/Hardcoded)
                 for length in [8, 6, 4]:
                     if len(hs) >= length:
                         prefix = hs[:length]
                         if prefix in self.hs_taxonomy:
                             lop1 = self.hs_taxonomy[prefix]
                             break
+            
+            # Official Taxonomy fallback
+            if not lop1 or lop1 == 'Chưa phân loại':
+                if hs in self.official_taxonomy:
+                    lop1 = self.official_taxonomy[hs]
+                else:
+                    for length in [8, 6]:
+                        if len(hs) >= length:
+                            prefix = hs[:length]
+                            if prefix in self.official_taxonomy:
+                                lop1 = self.official_taxonomy[prefix]
+                                break
                             
             if not lop1 or lop1 == 'Chưa phân loại':
                 fallback = get_dynamic_name(3)
