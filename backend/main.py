@@ -537,19 +537,26 @@ def batch_insights(batch_id: str, current_user: models.User = Depends(auth.get_c
                 # pandas usecols requires columns to exist. If a column is missing, it will throw an error.
                 # So we read all and then filter.
                 df = pd.read_excel(path) if path.endswith('.xlsx') else pd.read_csv(path)
-                keep_cols = [c for c in ['Dòng SP', 'Loại', 'Công ty NK', 'Công ty XK', 'Giá trị', 'Loại giao dịch'] if c in df.columns]
+                keep_cols = [c for c in ['Dòng SP', 'Loại', 'Công ty NK', 'Công ty XK', 'Giá trị', 'Loại giao dịch', 'Trạng Thái', 'Lớp 1'] if c in df.columns]
                 df = df[keep_cols]
                 all_dfs.append(df)
             except Exception:
                 pass
             
     if not all_dfs:
-         return {"product_lines": [], "nc_lk_ratio": [], "top_companies": []}
+         return {"product_lines": [], "nc_lk_ratio": [], "top_companies": [], "top_hs_codes": [], "total_rows": 0, "needs_review_count": 0}
          
     merged_df = pd.concat(all_dfs, ignore_index=True)
     
+    total_rows = len(merged_df)
+    needs_review_count = len(merged_df[merged_df['Trạng Thái'] == 'Cần kiểm tra']) if 'Trạng Thái' in merged_df.columns else 0
+    
     pl_counts = merged_df['Dòng SP'].value_counts().reset_index() if 'Dòng SP' in merged_df.columns else pd.DataFrame(columns=['name', 'value'])
     if not pl_counts.empty: pl_counts.columns = ['name', 'value']
+    
+    hs_counts = merged_df['Lớp 1'].value_counts().reset_index() if 'Lớp 1' in merged_df.columns else pd.DataFrame(columns=['name', 'value'])
+    if not hs_counts.empty: hs_counts.columns = ['name', 'value']
+    top_hs = hs_counts.head(5).to_dict('records') if not hs_counts.empty else []
     
     nc_lk_counts = merged_df['Loại'].value_counts().reset_index() if 'Loại' in merged_df.columns else pd.DataFrame(columns=['name', 'value'])
     if not nc_lk_counts.empty: nc_lk_counts.columns = ['name', 'value']
@@ -570,7 +577,10 @@ def batch_insights(batch_id: str, current_user: models.User = Depends(auth.get_c
     return {
         "product_lines": pl_counts.to_dict('records') if not pl_counts.empty else [],
         "nc_lk_ratio": nc_lk_counts.to_dict('records') if not nc_lk_counts.empty else [],
-        "top_companies": top_comps
+        "top_companies": top_comps,
+        "top_hs_codes": top_hs,
+        "total_rows": total_rows,
+        "needs_review_count": needs_review_count
     }
 
 @app.delete("/api/jobs/{job_id}")
