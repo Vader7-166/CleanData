@@ -4,12 +4,14 @@ import { Button } from './ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
+import { Input } from './ui/input';
+import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Download, FileText, PieChart as PieChartIcon, Loader2, AlertCircle } from 'lucide-react';
+import { Download, FileText, PieChart as PieChartIcon, Loader2, AlertCircle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const COLORS = ['#00A651', '#1E2A4F', '#E32636', '#0ea5e9', '#f59e0b', '#8b5cf6'];
 
 export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
   const [open, setOpen] = useState(false);
@@ -20,8 +22,16 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [insights, setInsights] = useState<any>(null);
   
-  // Filter state
+  // Filter & Pagination state
   const [showOnlyReview, setShowOnlyReview] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [showOnlyReview, searchQuery]);
 
   useEffect(() => {
     if (open) {
@@ -82,9 +92,17 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
     }
   };
 
-  const filteredData = showOnlyReview 
-    ? previewData.filter(row => row['Trạng Thái'] === 'Cần kiểm tra')
-    : previewData;
+  const filteredData = previewData.filter(row => {
+    if (showOnlyReview && row['Trạng Thái'] !== 'Cần kiểm tra') return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return Object.values(row).some(v => String(v).toLowerCase().includes(q));
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const allKeys = Array.from(new Set(filteredData.flatMap(row => Object.keys(row))));
 
@@ -140,86 +158,107 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
 
             <TabsContent value="insights" className="flex-1 overflow-auto border rounded-lg p-6 bg-slate-50/50 m-0">
               {insights && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Product Lines Chart */}
-                  <div className="bg-white p-4 rounded-xl border shadow-sm">
-                    <h3 className="font-semibold text-center mb-4">Phân bổ Dòng Sản Phẩm</h3>
-                    <div className="h-64">
-                      {insights.product_lines?.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
-                            <Pie
-                              data={insights.product_lines}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={60}
-                              outerRadius={80}
-                              paddingAngle={5}
-                              dataKey="value"
-                              label={({name, percent}) => {
-                                const tName = name.length > 15 ? name.substring(0, 15) + '...' : name;
-                                return `${tName} ${(percent * 100).toFixed(0)}%`;
-                              }}
-                            >
-                              {insights.product_lines.map((entry: any, index: number) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => [value, 'Số lượng']} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      ) : <p className="text-center text-muted-foreground pt-20">Không có dữ liệu</p>}
+                <div className="flex flex-col gap-8">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white p-6 rounded-xl border shadow-sm flex flex-col justify-center items-center">
+                      <h4 className="text-muted-foreground font-medium mb-2">Tổng Số Dòng Dữ Liệu</h4>
+                      <p className="text-4xl font-bold text-primary">{insights.total_rows?.toLocaleString() || 0}</p>
+                    </div>
+                    <div className="bg-white p-6 rounded-xl border shadow-sm flex flex-col justify-center items-center">
+                      <h4 className="text-muted-foreground font-medium mb-2">Tỷ lệ Tự động Hoàn thành</h4>
+                      <div className="flex items-end gap-2">
+                        <p className="text-4xl font-bold text-green-600">
+                          {insights.total_rows ? (((insights.total_rows - (insights.needs_review_count || 0)) / insights.total_rows) * 100).toFixed(1) : 0}%
+                        </p>
+                        <p className="text-sm text-muted-foreground mb-1">
+                          ({insights.needs_review_count || 0} dòng cần kiểm tra)
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* NC/LK Ratio Chart */}
-                  <div className="bg-white p-4 rounded-xl border shadow-sm">
-                    <h3 className="font-semibold text-center mb-4">Tỷ lệ Nhập Khẩu / Xuất Khẩu (NC/LK)</h3>
-                    <div className="h-64">
-                      {insights.nc_lk_ratio?.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
-                            <Pie
-                              data={insights.nc_lk_ratio}
-                              cx="50%"
-                              cy="50%"
-                              outerRadius={80}
-                              dataKey="value"
-                              label={({name, percent}) => {
-                                const tName = name.length > 15 ? name.substring(0, 15) + '...' : name;
-                                return `${tName} ${(percent * 100).toFixed(0)}%`;
-                              }}
-                            >
-                              {insights.nc_lk_ratio.map((entry: any, index: number) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => [value, 'Số lượng']} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      ) : <p className="text-center text-muted-foreground pt-20">Không có dữ liệu</p>}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Product Lines Chart */}
+                    <div className="bg-white p-4 rounded-xl border shadow-sm">
+                      <h3 className="font-semibold text-center mb-4">Phân bổ Dòng Sản Phẩm</h3>
+                      <div className="h-64">
+                        {insights.product_lines?.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+                              <Pie
+                                data={insights.product_lines}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={60}
+                                outerRadius={80}
+                                paddingAngle={5}
+                                dataKey="value"
+                                label={({name, percent}) => {
+                                  const tName = name.length > 15 ? name.substring(0, 15) + '...' : name;
+                                  return `${tName} ${(percent * 100).toFixed(0)}%`;
+                                }}
+                              >
+                                {insights.product_lines.map((entry: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value: number) => [value, 'Số lượng']} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        ) : <p className="text-center text-muted-foreground pt-20">Không có dữ liệu</p>}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Top Companies Bar Chart */}
-                  <div className="md:col-span-2 bg-white p-4 rounded-xl border shadow-sm">
-                    <h3 className="font-semibold text-center mb-4">Top 5 Công ty theo Giá trị</h3>
-                    <div className="h-72">
-                      {insights.top_companies?.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={insights.top_companies} layout="vertical" margin={{ top: 10, right: 30, left: 50, bottom: 10 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                            <XAxis type="number" tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
-                            <YAxis type="category" dataKey="name" width={150} tick={{fontSize: 11}} tickFormatter={(v) => v.length > 20 ? v.substring(0, 20) + '...' : v} />
-                            <Tooltip cursor={{fill: '#f5f5f5'}} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Giá trị']} labelFormatter={(l) => l} />
-                            <Bar dataKey="value" fill="#8884d8" radius={[0, 4, 4, 0]}>
-                              {insights.top_companies.map((entry: any, index: number) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : <p className="text-center text-muted-foreground pt-20">Không có dữ liệu</p>}
+                    {/* Top HS Codes Chart */}
+                    <div className="bg-white p-4 rounded-xl border shadow-sm">
+                      <h3 className="font-semibold text-center mb-4">Top 5 Lớp 1 (Mã HS)</h3>
+                      <div className="h-64">
+                        {insights.top_hs_codes?.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+                              <Pie
+                                data={insights.top_hs_codes}
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                dataKey="value"
+                                label={({name, percent}) => {
+                                  const tName = name.length > 15 ? name.substring(0, 15) + '...' : name;
+                                  return `${tName} ${(percent * 100).toFixed(0)}%`;
+                                }}
+                              >
+                                {insights.top_hs_codes.map((entry: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[(index + 2) % COLORS.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value: number) => [value, 'Số lượng']} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        ) : <p className="text-center text-muted-foreground pt-20">Không có dữ liệu</p>}
+                      </div>
+                    </div>
+
+                    {/* Top Companies Bar Chart */}
+                    <div className="md:col-span-2 bg-white p-4 rounded-xl border shadow-sm">
+                      <h3 className="font-semibold text-center mb-4">Top 5 Công ty theo Giá trị</h3>
+                      <div className="h-72">
+                        {insights.top_companies?.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={insights.top_companies} layout="vertical" margin={{ top: 10, right: 30, left: 50, bottom: 10 }}>
+                              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                              <XAxis type="number" tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
+                              <YAxis type="category" dataKey="name" width={150} tick={{fontSize: 11}} tickFormatter={(v) => v.length > 20 ? v.substring(0, 20) + '...' : v} />
+                              <Tooltip cursor={{fill: '#f5f5f5'}} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Giá trị']} labelFormatter={(l) => l} />
+                              <Bar dataKey="value" fill="#00A651" radius={[0, 4, 4, 0]}>
+                                {insights.top_companies.map((entry: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        ) : <p className="text-center text-muted-foreground pt-20">Không có dữ liệu</p>}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -227,25 +266,37 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
             </TabsContent>
 
             <TabsContent value="preview" className="flex-1 flex flex-col overflow-hidden m-0 border rounded-lg">
-              <div className="p-4 bg-muted/30 border-b flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Switch 
-                    id="review-mode" 
-                    checked={showOnlyReview} 
-                    onCheckedChange={setShowOnlyReview} 
-                  />
-                  <Label htmlFor="review-mode" className="font-medium cursor-pointer">
-                    Chỉ hiển thị dòng "Cần kiểm tra"
-                  </Label>
+              <div className="p-4 bg-muted/30 border-b flex flex-wrap gap-4 items-center justify-between">
+                <div className="flex items-center space-x-6">
+                  <div className="flex items-center space-x-2">
+                    <Switch 
+                      id="review-mode" 
+                      checked={showOnlyReview} 
+                      onCheckedChange={setShowOnlyReview} 
+                    />
+                    <Label htmlFor="review-mode" className="font-medium cursor-pointer">
+                      Chỉ hiển thị dòng "Cần kiểm tra"
+                    </Label>
+                  </div>
+                  <div className="relative w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder="Tìm kiếm..."
+                      className="pl-9 bg-white"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <div className="text-sm text-muted-foreground flex items-center gap-2">
                   <FileText className="size-4" />
-                  Đang xem {filteredData.length} dòng (từ tối đa 50 dòng/file)
+                  Kết quả: {filteredData.length} dòng
                 </div>
               </div>
 
               <div className="flex-1 overflow-auto">
-                {filteredData.length > 0 ? (
+                {paginatedData.length > 0 ? (
                   <Table className="relative">
                     <TableHeader className="sticky top-0 bg-background z-10 border-b shadow-sm">
                       <TableRow>
@@ -257,11 +308,15 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredData.map((row, i) => (
+                      {paginatedData.map((row, i) => (
                         <TableRow key={`row-${i}`} className={row['Trạng Thái'] === 'Cần kiểm tra' ? 'bg-amber-50/50' : ''}>
                           {allKeys.map(col => (
                             <TableCell key={`cell-${i}-${col}`} className={`whitespace-nowrap max-w-[250px] truncate ${col === 'Tên file nguồn' ? 'bg-primary/5 font-medium text-xs' : ''}`}>
-                              {row[col] !== undefined ? row[col] : ''}
+                              {col === 'Trạng Thái' ? (
+                                <Badge variant={row[col] === 'Cần kiểm tra' ? 'destructive' : 'default'} className={row[col] === 'Hoàn thành' ? 'bg-green-600 hover:bg-green-700' : ''}>
+                                  {row[col]}
+                                </Badge>
+                              ) : row[col] !== undefined ? row[col] : ''}
                             </TableCell>
                           ))}
                         </TableRow>
@@ -274,6 +329,33 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
                   </div>
                 )}
               </div>
+              
+              {/* Pagination Footer */}
+              {totalPages > 1 && (
+                <div className="p-3 border-t bg-muted/20 flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    Trang {currentPage} / {totalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="size-4 mr-1" /> Trước
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Sau <ChevronRight className="size-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         )}
