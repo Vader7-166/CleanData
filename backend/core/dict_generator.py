@@ -323,15 +323,17 @@ class DictionaryGenerator:
         words = [w for p in products for w in p.split() if self._is_valid_cluster_token(w)]
         if words:
             top = [w for w, _ in Counter(words).most_common(top_n)]
-            if len(top) >= 2: return ' '.join(top).capitalize()
+            if len(top) >= 1: return ' '.join(top).capitalize()
         if raw_descriptions:
             cands = []
             for d in raw_descriptions:
                 cl = re.sub(r'^[^#]*#\s*&?\s*', '', str(d))
                 cl = re.sub(r'#.*$', '', cl).strip()
                 v = [w for w in cl.lower().split() if self._is_valid_cluster_token(w)]
-                if len(v) >= 2: cands.append(' '.join(v[:6]))
+                if len(v) >= 1: cands.append(' '.join(v[:6]))
             if cands: return min(cands, key=len)[:60].capitalize()
+            # If all tokens were invalid, just return the first raw description
+            return str(raw_descriptions[0])[:60].capitalize()
         return "Chưa phân loại"
 
     def get_cluster_names_tfidf(self, clusters_data, top_n=4):
