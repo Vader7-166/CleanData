@@ -122,7 +122,7 @@ export default function BatchPreviewDialog({ batchId }: { batchId: string }) {
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="max-w-[95vw] w-full h-[95vh] flex flex-col">
+      <DialogContent className="!max-w-[95vw] w-full h-[95vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Batch Insights & Data Preview</DialogTitle>
           <DialogDescription>
