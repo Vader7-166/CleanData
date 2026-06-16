@@ -186,8 +186,13 @@ class DataCleaner:
         
         def initial_mapping():
             df_clean = pd.DataFrame()
-            if 'HS_Code' in df.columns:
-                df_clean['Mã HS'] = df['HS_Code']
+            hs_col = None
+            for cand in ['HS_Code', 'Mã HS', 'HS Code', 'Mã hàng', 'HS']:
+                if cand in df.columns:
+                    hs_col = cand
+                    break
+            if hs_col:
+                df_clean['Mã HS'] = df[hs_col]
             else:
                 df_clean['Mã HS'] = ''
 
@@ -250,7 +255,12 @@ class DataCleaner:
                 df_clean['Ngày'] = ''
                 df_clean['Tháng'] = pd.array([pd.NA] * len(df), dtype='Int64')
 
-            detailed_product = df.get('Detailed_Product', pd.Series(dtype=str))
+            prod_col = None
+            for cand in ['Detailed_Product', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+                if cand in df.columns:
+                    prod_col = cand
+                    break
+            detailed_product = df[prod_col] if prod_col else pd.Series(dtype=str)
             if 'Detailed_Product_EN' in df.columns:
                 detailed_product = detailed_product.fillna(df['Detailed_Product_EN'])
             if 'Detailed_Product_CN' in df.columns:
