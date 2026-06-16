@@ -1088,11 +1088,11 @@ def load_robust_df(content, filename):
             try:
                 # Try skipping 9 rows (common in this project's data)
                 df = pd.read_csv(io.BytesIO(content), encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str, skiprows=9)
-                if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns or 'Actual_Detail_Product' in df.columns:
+                if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns or 'Actual_Detail_Product' in df.columns or 'Actual_Detailed_Product' in df.columns:
                     return df
                 # Fallback to no skip
                 df = pd.read_csv(io.BytesIO(content), encoding=enc, on_bad_lines='skip', low_memory=False, dtype=str)
-                if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns or 'Actual_Detail_Product' in df.columns:
+                if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns or 'Actual_Detail_Product' in df.columns or 'Actual_Detailed_Product' in df.columns:
                     return df
             except Exception:
                 continue
@@ -1101,7 +1101,7 @@ def load_robust_df(content, filename):
     else:
         try:
             df = pd.read_excel(io.BytesIO(content), dtype=str, skiprows=9)
-            if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns or 'Actual_Detail_Product' in df.columns:
+            if 'HS_Code' in df.columns or 'Detailed_Product' in df.columns or 'Actual_Detail_Product' in df.columns or 'Actual_Detailed_Product' in df.columns:
                 return df
             return pd.read_excel(io.BytesIO(content), dtype=str)
         except Exception:
