@@ -21,8 +21,16 @@ export function Sidebar({ setToken }: { setToken: (token: string | null) => void
 
   return (
     <div className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
-      <div className="p-6">
-        <h1 className="text-sidebar-foreground font-semibold text-xl">Excel Data Cleaner</h1>
+      <div className="p-6 flex items-center gap-3">
+        <svg width="36" height="36" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+          <path d="M10 20 L40 50 L10 80 L25 80 L55 50 L25 20 Z" fill="#00A651" />
+          <path d="M40 20 L70 50 L40 80 L55 80 L85 50 L55 20 Z" fill="#00A651" />
+          <path d="M70 20 L100 50 L70 80 L85 80 L115 50 L85 20 Z" fill="#00A651" />
+        </svg>
+        <div className="flex flex-col">
+          <span className="text-sidebar-foreground font-bold text-lg leading-tight tracking-tight">Excel Data</span>
+          <span className="text-sidebar-foreground/80 font-medium text-sm leading-tight">Cleaner</span>
+        </div>
       </div>
       <nav className="flex-1 px-3">
         {menuItems.map((item) => {
