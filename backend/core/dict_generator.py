@@ -23,6 +23,7 @@ DONG_SP_MAP = {
     '8539': 'SP ĐÈN/BÓNG ĐÈN',
     '9405': 'SP ĐÈN/THIẾT BỊ CHIẾU SÁNG',
     '8516': 'SP THIẾT BỊ ĐIỆN GIA DỤNG',
+    '8504': 'SP BỘ NGUỒN/BIẾN ÁP',
 }
 
 VI_STOPWORDS = {
@@ -149,6 +150,14 @@ HS_TAXONOMY = {
     '85169021': 'Bộ phận thiết bị điện — tấm toả nhiệt', '85169029': 'Bộ phận thiết bị điện — loại khác',
     '85169030': 'Bộ phận của thiết bị đun nước nóng 8516.10', '85169040': 'Bộ phận điện trở đốt nóng',
     '85169090': 'Bộ phận thiết bị điện — loại khác',
+    '850410': 'Chấn lưu cho đèn phóng điện', '850421': 'Máy biến áp sử dụng dung môi lỏng cách điện ≤ 650 kVA',
+    '850422': 'Máy biến áp sử dụng dung môi lỏng cách điện > 650 kVA ≤ 10000 kVA', '850423': 'Máy biến áp sử dụng dung môi lỏng cách điện > 10000 kVA',
+    '850431': 'Máy biến áp loại khác ≤ 1 kVA', '850432': 'Máy biến áp loại khác > 1 kVA ≤ 16 kVA',
+    '850433': 'Máy biến áp loại khác > 16 kVA ≤ 500 kVA', '850434': 'Máy biến áp loại khác > 500 kVA',
+    '850440': 'Máy biến đổi tĩnh điện', '85044011': 'Bộ nguồn cấp điện liên tục (UPS)',
+    '85044019': 'Máy biến đổi tĩnh điện loại khác', '85044020': 'Máy nạp ắc qui, pin công suất > 100 kVA',
+    '85044030': 'Bộ chỉnh lưu khác', '85044040': 'Bộ nghịch lưu', '85044090': 'Máy biến đổi tĩnh điện loại khác',
+    '850450': 'Cuộn cảm', '850490': 'Bộ phận của máy biến áp/cuộn cảm',
 }
 
 LK_KEYWORDS = [
@@ -176,6 +185,11 @@ HS_TYPE_MAP = {
     '85394100': 'NC', '85394900': 'NC', '85395100': 'LK', '85395210': 'NC',
     '85395290': 'NC', '85399010': 'LK', '85399020': 'LK', '85399030': 'LK',
     '85399090': 'LK', '85167910': 'NC', '85168010': 'LK', '85169090': 'LK',
+    '850410': 'LK', '850421': 'NC', '850422': 'NC', '850423': 'NC',
+    '850431': 'NC', '850432': 'NC', '850433': 'NC', '850434': 'NC',
+    '850440': 'NC', '85044011': 'NC', '85044019': 'NC', '85044020': 'NC',
+    '85044030': 'NC', '85044040': 'NC', '85044090': 'NC',
+    '850450': 'NC', '850490': 'LK',
 }
 
 _VALID_TOKEN_RE = re.compile(r'[a-záàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ]{2,}')
@@ -430,7 +444,25 @@ class DictionaryGenerator:
             lbls = self.cluster_products(sub['_tok'].tolist(), eps, min_samples)
             raw_df.loc[sub.index, '_cluster'] = lbls
             
-            # Now hs is guaranteed to be only digits
+            c_data = {}
+            for l in sorted(set(lbls)):
+                m = lbls == l
+                c_data[l] = {
+                    'prods': sub[m]['_tok'].tolist(), 'raw': sub[m]['Detailed_Product'].tolist(),
+                    'count': m.sum(), 'sample': str(sub[m]['Detailed_Product'].iloc[0])[:120]
+                }
+            
+            # Helper to get dynamic name from products
+            def get_dynamic_name(top_n):
+                all_prods, all_raw = [], []
+                for l, d in c_data.items():
+                    if l != -1:
+                        all_prods.extend(d['prods'])
+                        all_raw.extend(d['raw'])
+                if not all_prods and -1 in c_data:
+                    all_prods, all_raw = c_data[-1]['prods'], c_data[-1]['raw']
+                return self.get_cluster_name_fallback(all_prods, all_raw, top_n)
+
             lop1 = self.hs_taxonomy.get(hs)
             if not lop1:
                 # Prefix matching logic
@@ -440,17 +472,15 @@ class DictionaryGenerator:
                         if prefix in self.hs_taxonomy:
                             lop1 = self.hs_taxonomy[prefix]
                             break
-            lop1 = lop1 or 'Chưa phân loại'
+                            
+            if not lop1 or lop1 == 'Chưa phân loại':
+                fallback = get_dynamic_name(3)
+                lop1 = fallback.title() if fallback else 'Chưa phân loại'
             
-            dong = self.dong_sp_map.get(hs[:4], f'SP {hs[:4]}')
-            
-            c_data = {}
-            for l in sorted(set(lbls)):
-                m = lbls == l
-                c_data[l] = {
-                    'prods': sub[m]['_tok'].tolist(), 'raw': sub[m]['Detailed_Product'].tolist(),
-                    'count': m.sum(), 'sample': str(sub[m]['Detailed_Product'].iloc[0])[:120]
-                }
+            dong = self.dong_sp_map.get(hs[:4])
+            if not dong:
+                fallback = get_dynamic_name(2)
+                dong = f"SP {fallback.upper()}" if fallback else f"SP {hs[:4]}"
             
             non_out = {l: v for l, v in c_data.items() if l != -1}
             names = self.get_cluster_names_tfidf(non_out)
