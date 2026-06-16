@@ -245,13 +245,55 @@ class DictionaryGenerator:
         return True
 
     def cluster_products(self, descriptions, eps=0.45, min_samples=2):
-        if len(descriptions) < 2: return np.array([0] * len(descriptions))
+        n = len(descriptions)
+        if n < 2: return np.array([0] * n)
+
+        MAX_CLUSTER_SIZE = 2000  # Cap to prevent OOM (2000×2000×8 = ~32MB)
+
         v = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1, max_df=0.95)
         try:
             m = v.fit_transform(descriptions)
-            d = cosine_distances(m)
-            return DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed').fit_predict(d)
-        except: return np.array([0] * len(descriptions))
+
+            if n <= MAX_CLUSTER_SIZE:
+                # Small enough — use original exact logic
+                d = cosine_distances(m)
+                return DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed').fit_predict(d)
+            else:
+                # Large N — sample, cluster, then assign remainder via cosine to centroids
+                print(f"DEBUG: HS group has {n} items (>{MAX_CLUSTER_SIZE}), using sampling strategy")
+                sample_idx = np.random.RandomState(42).choice(n, MAX_CLUSTER_SIZE, replace=False)
+                m_sample = m[sample_idx]
+                d_sample = cosine_distances(m_sample)
+                labels_sample = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed').fit_predict(d_sample)
+
+                all_labels = np.full(n, -1)
+                all_labels[sample_idx] = labels_sample
+
+                unique_labels = set(labels_sample) - {-1}
+                if unique_labels:
+                    # Compute centroid for each cluster (mean of TF-IDF vectors)
+                    centroids = {}
+                    for lbl in unique_labels:
+                        mask = labels_sample == lbl
+                        centroids[lbl] = np.asarray(m_sample[mask].mean(axis=0))
+
+                    # Assign remaining items to nearest centroid within eps
+                    remaining_idx = np.setdiff1d(np.arange(n), sample_idx)
+                    for idx in remaining_idx:
+                        row = np.asarray(m[idx].todense())
+                        min_dist = float('inf')
+                        best_lbl = -1
+                        for lbl, cent in centroids.items():
+                            dist = cosine_distances(row, cent)[0][0]
+                            if dist < eps and dist < min_dist:
+                                min_dist = dist
+                                best_lbl = lbl
+                        all_labels[idx] = best_lbl
+
+                return all_labels
+        except Exception as e:
+            print(f"DEBUG: cluster_products error: {e}")
+            return np.array([0] * n)
 
     def get_cluster_name_fallback(self, products, raw_descriptions=None, top_n=4):
         words = [w for p in products for w in p.split() if self._is_valid_cluster_token(w)]
