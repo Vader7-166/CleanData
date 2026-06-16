@@ -289,7 +289,7 @@ const HSTaxonomy: React.FC = () => {
             <label className="cursor-pointer gap-2">
               <Upload className="size-4" />
               Import CSV
-              <input type="file" accept=".csv,.xlsx" className="hidden" onChange={handleBulkUpload} />
+              <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleBulkUpload} />
             </label>
           </Button>
           <Button size="sm" onClick={openAddDialog} className="gap-2">

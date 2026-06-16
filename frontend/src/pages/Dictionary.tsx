@@ -195,7 +195,7 @@ const Dictionary = () => {
               <label className="text-sm font-medium">Select CSV File</label>
               <Input 
                 type="file" 
-                accept=".csv" 
+                accept=".csv,.xlsx,.xls" 
                 onChange={handleFileChange}
                 className="cursor-pointer"
               />
