@@ -448,7 +448,7 @@ class DictionaryGenerator:
         raw_df['HS_Code'] = raw_df['HS_Code'].apply(lambda x: re.sub(r'\D', '', x))
         
         prod_col = None
-        for cand in ['Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+        for cand in ['Detailed_Product', 'Actual_Detail_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
             if cand in raw_df.columns:
                 prod_col = cand
                 break
