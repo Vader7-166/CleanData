@@ -432,9 +432,28 @@ class DictionaryGenerator:
 
     def generate_draft_taxonomy(self, raw_df, eps=0.70, min_samples=8, use_llm=True, progress_callback=None):
         raw_df = raw_df.copy()
-        # Clean HS_Code column: remove dots and non-digits
-        raw_df['HS_Code'] = raw_df['HS_Code'].astype(str).apply(lambda x: re.sub(r'\D', '', x))
         
+        hs_col = None
+        for cand in ['HS_Code', 'Mã HS', 'HS Code', 'Mã hàng', 'HS']:
+            if cand in raw_df.columns:
+                hs_col = cand
+                break
+        if not hs_col:
+            raise ValueError("Không tìm thấy cột Mã HS (HS_Code, Mã HS, v.v.)")
+            
+        raw_df['HS_Code'] = raw_df[hs_col].astype(str)
+        # Clean HS_Code column: remove dots and non-digits
+        raw_df['HS_Code'] = raw_df['HS_Code'].apply(lambda x: re.sub(r'\D', '', x))
+        
+        prod_col = None
+        for cand in ['Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+            if cand in raw_df.columns:
+                prod_col = cand
+                break
+        if not prod_col:
+            raise ValueError("Không tìm thấy cột mô tả sản phẩm (Detailed_Product, Tên hàng gốc, v.v.)")
+            
+        raw_df['Detailed_Product'] = raw_df[prod_col].astype(str)
         raw_df['_clean'] = raw_df['Detailed_Product'].apply(self.clean_text)
         raw_df['_tok'] = raw_df['_clean'].apply(lambda x: self.tokenize_vi(x))
         raw_df = raw_df[raw_df['_tok'].str.len() > 0].reset_index(drop=True)
