@@ -449,14 +449,19 @@ class DictionaryGenerator:
         raw_df['HS_Code'] = raw_df['HS_Code'].apply(lambda x: re.sub(r'\D', '', x))
         
         prod_col = None
-        for cand in ['Detailed_Product', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+        for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
             if cand in raw_df.columns:
                 prod_col = cand
                 break
         if not prod_col:
             raise ValueError(f"Không tìm thấy cột mô tả sản phẩm (Detailed_Product, Tên hàng gốc, v.v.). Các cột hiện có: {list(raw_df.columns)}")
             
-        raw_df['Detailed_Product'] = raw_df[prod_col].astype(str)
+        detailed_product = raw_df[prod_col].copy()
+        for fallback_col in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc']:
+            if fallback_col in raw_df.columns and fallback_col != prod_col:
+                detailed_product = detailed_product.fillna(raw_df[fallback_col])
+                
+        raw_df['Detailed_Product'] = detailed_product.astype(str)
         raw_df['_clean'] = raw_df['Detailed_Product'].apply(self.clean_text)
         raw_df['_tok'] = raw_df['_clean'].apply(lambda x: self.tokenize_vi(x))
         raw_df = raw_df[raw_df['_tok'].str.len() > 0].reset_index(drop=True)
@@ -596,7 +601,7 @@ class DictionaryGenerator:
 
         # Product description column mapping
         prod_col = None
-        for cand in ['Detailed_Product', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+        for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
             if cand in raw_cols:
                 prod_col = raw_cols[cand]
                 break
@@ -605,7 +610,15 @@ class DictionaryGenerator:
 
         # Standardize to internal names for processing
         raw_df['HS_Code_Internal'] = raw_df[hs_col].astype(str).apply(lambda x: re.sub(r'\D', '', x))
-        raw_df['Detailed_Product_Internal'] = raw_df[prod_col].astype(str)
+        
+        detailed_product = raw_df[prod_col].copy()
+        for fallback_col in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc']:
+            if fallback_col in raw_cols:
+                actual_col = raw_cols[fallback_col]
+                if actual_col != prod_col:
+                    detailed_product = detailed_product.fillna(raw_df[actual_col])
+                    
+        raw_df['Detailed_Product_Internal'] = detailed_product.astype(str)
         
         # Ensure 'Mã HS' in taxonomy is also cleaned for matching
         tax_df['Mã HS_Internal'] = tax_df['Mã HS'].astype(str).apply(lambda x: re.sub(r'\D', '', x))

@@ -163,11 +163,15 @@ import json
 async def process_batch(batch_id: str, tasks: list):
     for task in tasks:
         job = jobs.get(task['job_id'])
+        if job and job.get("status") == "cancelled":
+            remove_file(task['temp_path'])
+            continue
+            
         if job:
             job["status"] = "processing"
             db_sync = database.SessionLocal()
             db_job = db_sync.query(models.ProcessingJob).filter(models.ProcessingJob.id == task['job_id']).first()
-            if db_job:
+            if db_job and db_job.status != 'cancelled':
                 db_job.status = "processing"
                 db_sync.commit()
             db_sync.close()
@@ -176,7 +180,7 @@ async def process_batch(batch_id: str, tasks: list):
     # Mark batch as done
     db_sync = database.SessionLocal()
     db_batch = db_sync.query(models.Batch).filter(models.Batch.id == batch_id).first()
-    if db_batch:
+    if db_batch and db_batch.status != 'cancelled':
         db_batch.status = "done"
         db_sync.commit()
     db_sync.close()
@@ -271,11 +275,15 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
         return
         
     async def progress_callback(msg):
+        job["progress_msg"] = msg
         await job["event_queue"].put({"event": "progress", "data": msg})
 
     try:
         start_time = time.time()
         await progress_callback("Loading Data...")
+        if job.get("status") == "cancelled":
+            return
+            
         is_csv = original_filename.endswith('.csv')
         
         # We don't need to define load_dataframe inside process_job anymore
@@ -428,6 +436,7 @@ def get_batch_status(batch_id: str, current_user: models.User = Depends(auth.get
             "id": j.id,
             "filename": j.filename,
             "status": current_status,
+            "progress_msg": live_job.get("progress_msg", "") if live_job else "",
             "transaction_type": j.transaction_type,
             "error_message": j.error_message
         })
@@ -438,6 +447,29 @@ def get_batch_status(batch_id: str, current_user: models.User = Depends(auth.get
         "created_at": batch.created_at,
         "jobs": job_statuses
     }
+
+@app.delete("/api/batches/{batch_id}")
+def delete_batch(batch_id: str, current_user: models.User = Depends(auth.get_current_user), db: Session = Depends(database.get_db)):
+    batch = db.query(models.Batch).filter(models.Batch.id == batch_id).first()
+    if not batch or batch.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access Denied")
+        
+    batch.status = 'cancelled'
+    db_jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.batch_id == batch_id).all()
+    for j in db_jobs:
+        if j.status in ['pending', 'processing']:
+            j.status = 'cancelled'
+            if j.id in jobs:
+                jobs[j.id]["status"] = "cancelled"
+                jobs[j.id]["progress_msg"] = "Cancelled by user"
+                # Remove temporary files if any
+                temp_path = f"temp_chunk_*"
+                # we don't know the exact temp chunk, but we can try to clean merged_temp_path 
+                merged_temp_path = f"temp_{j.id}_merged.csv"
+                remove_file(merged_temp_path)
+    
+    db.commit()
+    return {"message": "Batch cancelled"}
 
 import zipfile
 import io
