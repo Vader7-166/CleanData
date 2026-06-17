@@ -256,15 +256,16 @@ class DataCleaner:
                 df_clean['Tháng'] = pd.array([pd.NA] * len(df), dtype='Int64')
 
             prod_col = None
-            for cand in ['Detailed_Product', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+            for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
                 if cand in df.columns:
                     prod_col = cand
                     break
-            detailed_product = df[prod_col] if prod_col else pd.Series(dtype=str)
-            if 'Detailed_Product_EN' in df.columns:
-                detailed_product = detailed_product.fillna(df['Detailed_Product_EN'])
-            if 'Detailed_Product_CN' in df.columns:
-                detailed_product = detailed_product.fillna(df['Detailed_Product_CN'])
+            
+            detailed_product = df[prod_col].copy() if prod_col else pd.Series(dtype=str)
+            for fallback_col in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Detailed_Product_EN', 'Detailed_Product_CN']:
+                if fallback_col in df.columns and fallback_col != prod_col:
+                    detailed_product = detailed_product.fillna(df[fallback_col])
+                    
             df_clean['Tên hàng raw'] = detailed_product
             return df_clean
 
@@ -361,7 +362,7 @@ class DataCleaner:
         
         def finalize():
             df_final = df_clean.drop(columns=['input_for_ai', 'Ket_Qua_Gop', 'Tên hàng raw'], errors='ignore')
-            mapped_cols_set = set(['HS_Code', 'Product', 'VN_Exporter', 'VN_Exporter_EN', 'Foreign_Importer', 'Destination_Country', 'Destination_Country_CN', 'Continent', 'Incoterms', 'Method_of_Payment', 'Unit_Qty', 'Quantity', 'Total_Value_USD', 'Unit_Price_USD', 'Date', 'Month', 'Detailed_Product', 'Detailed_Product_EN', 'Detailed_Product_CN', 'VN_Importer', 'VN_Importer_EN', 'Foreign_Exporter', 'Origin_Country', 'Origin_Country_CN'])
+            mapped_cols_set = set(['HS_Code', 'Product', 'VN_Exporter', 'VN_Exporter_EN', 'Foreign_Importer', 'Destination_Country', 'Destination_Country_CN', 'Continent', 'Incoterms', 'Method_of_Payment', 'Unit_Qty', 'Quantity', 'Total_Value_USD', 'Unit_Price_USD', 'Date', 'Month', 'Detailed_Product', 'Detailed_Product_EN', 'Detailed_Product_CN', 'VN_Importer', 'VN_Importer_EN', 'Foreign_Exporter', 'Origin_Country', 'Origin_Country_CN', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Actual_Detailed_Product_LL'])
             for col in df.columns:
                 if col not in mapped_cols_set and col not in df_final.columns:
                     df_final[col] = df[col]

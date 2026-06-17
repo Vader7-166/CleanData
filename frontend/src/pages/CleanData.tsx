@@ -48,13 +48,19 @@ const CleanData = () => {
           const data = await res.json();
           setBatchStatus(data);
           
-          if (data.status === 'done' || data.status === 'error') {
+          if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
             stopPolling();
             setLoading(false);
           }
         } else {
           stopPolling();
-          setError("Failed to fetch batch status.");
+          if (res.status === 404 || res.status === 403) {
+            setActiveBatchId(null);
+            setBatchStatus(null);
+            setError('');
+          } else {
+            setError("Failed to fetch batch status.");
+          }
           setLoading(false);
         }
       } catch (err) {
@@ -112,6 +118,23 @@ const CleanData = () => {
     } catch (err: any) {
       setError(err.message);
       setLoading(false);
+    }
+  };
+
+  const handleCancelBatch = async () => {
+    if (!activeBatchId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/batches/${activeBatchId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        resetPage();
+      } else {
+        setError("Failed to cancel batch.");
+      }
+    } catch (err) {
+      setError("Network error while cancelling batch.");
     }
   };
 
@@ -224,7 +247,14 @@ const CleanData = () => {
                 <Badge className="bg-green-500 hover:bg-green-600">Completed</Badge>
               )}
               {(!batchStatus || batchStatus?.status === 'processing') && (
-                <Badge variant="outline" className="text-blue-500 border-blue-500/30 bg-blue-500/10">Processing...</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-blue-500 border-blue-500/30 bg-blue-500/10">Processing...</Badge>
+                  {activeBatchId && (
+                    <Button variant="ghost" size="sm" onClick={handleCancelBatch} className="h-6 px-2 text-destructive hover:bg-destructive/10">
+                      Cancel
+                    </Button>
+                  )}
+                </div>
               )}
             </CardHeader>
             <CardContent className="space-y-4">
@@ -249,9 +279,16 @@ const CleanData = () => {
                           {job.error_message ? (
                             <p className="text-xs text-red-500 mt-0.5">{job.error_message}</p>
                           ) : (
-                            <p className="text-xs text-muted-foreground mt-0.5 capitalize">
-                              {job.status} • {job.transaction_type || 'Auto-detected'}
-                            </p>
+                            <div className="flex flex-col gap-1 mt-0.5">
+                              <p className="text-xs text-muted-foreground capitalize">
+                                {job.status} • {job.transaction_type || 'Auto-detected'}
+                              </p>
+                              {job.status === 'processing' && job.progress_msg && (
+                                <div className="flex items-center gap-2 text-xs text-blue-500 font-medium">
+                                  <span>{job.progress_msg}</span>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
