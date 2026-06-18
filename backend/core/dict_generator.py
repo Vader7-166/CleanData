@@ -20,10 +20,17 @@ import requests
 DONG_SP_MAP = {
     '9617': 'SP BÌNH/PHÍCH',
     '7020': 'SP THỦY TINH',
-    '8539': 'SP ĐÈN/BÓNG ĐÈN',
-    '9405': 'SP ĐÈN/THIẾT BỊ CHIẾU SÁNG',
+    '8539': 'SP LED',
+    '9405': 'SP LED',
     '8516': 'SP THIẾT BỊ ĐIỆN GIA DỤNG',
     '8504': 'SP BỘ NGUỒN/BIẾN ÁP',
+}
+
+# Business-defined Dòng SP overrides per HS code (from HQ files)
+# These take priority over DONG_SP_MAP 4-digit prefix lookup
+DONG_SP_OVERRIDES = {
+    '85394900': 'đèn uv',
+    '85394100': 'đèn uv',
 }
 
 VI_STOPWORDS = {
@@ -75,70 +82,69 @@ LABEL_STOPWORDS = VI_STOPWORDS | {
     'psg', 'ign', 'ptr', 'hsymbl', 'hsty', 'ctg', 'mcx', 'mea', 'mtr',
 }
 
+# HS_TAXONOMY: Maps HS code -> Lớp 1 business category
+# 8539/9405 entries use HQ business terms; other groups keep technical descriptions
 HS_TAXONOMY = {
     '96170010': 'Phích và bình giữ nhiệt', '96170020': 'Các bộ phận phích/bình',
     '70200011': 'Khuôn thủy tinh — sản xuất acrylic', '70200019': 'Khuôn thủy tinh — loại khác',
     '70200020': 'Ống thạch anh — lò phản ứng / bán dẫn', '70200030': 'Ruột phích / ruột bình chân không',
     '70200040': 'Ống chân không — năng lượng mặt trời', '70200090': 'Sản phẩm thủy tinh khác',
     '7020009010': 'Bình ga sợi thủy tinh', '7020009090': 'Sản phẩm thủy tinh khác (loại khác)',
-    '85391010': 'Đèn pha gắn kín — dùng cho xe có động cơ', '85391090': 'Đèn pha gắn kín — loại khác',
-    '85392120': 'Bóng đèn ha-lo-gien vonfram — thiết bị y tế', '85392130': 'Bóng đèn ha-lo-gien vonfram — xe có động cơ',
-    '85392140': 'Bóng đèn ha-lo-gien vonfram — phản xạ', '85392190': 'Bóng đèn ha-lo-gien vonfram — loại khác',
-    '85392220': 'Bóng đèn dây tóc ≤200W — thiết bị y tế', '85392231': 'Bóng đèn dây tóc — chiếu sáng trang trí ≤60W',
-    '85392232': 'Bóng đèn dây tóc — chiếu sáng trang trí >60W', '85392233': 'Bóng đèn dây tóc — chiếu sáng gia dụng',
-    '85392239': 'Bóng đèn dây tóc ≤200W — loại khác', '85392291': 'Bóng đèn dây tóc — chiếu sáng trang trí ≤60W (nhóm khác)',
-    '85392293': 'Bóng đèn dây tóc — chiếu sáng gia dụng (nhóm khác)', '85392299': 'Bóng đèn dây tóc ≤200W — loại khác (nhóm khác)',
-    '85392910': 'Bóng đèn dây tóc — thiết bị y tế', '85392920': 'Bóng đèn dây tóc — xe có động cơ',
-    '85392930': 'Bóng đèn dây tóc — phản xạ', '85392941': 'Bóng đèn flash / cỡ nhỏ — thiết bị y tế',
-    '85392949': 'Bóng đèn flash / cỡ nhỏ — loại khác', '85392950': 'Bóng đèn dây tóc >200W ≤300W, >100V',
-    '85392960': 'Bóng đèn dây tóc ≤200W, ≤100V', '8539296010': 'Bóng đèn phòng nổ hai sợi đốt — đèn thợ mỏ',
-    '8539296090': 'Bóng đèn dây tóc ≤200W ≤100V — loại khác', '85392990': 'Bóng đèn dây tóc — loại khác',
-    '85393110': 'Bóng đèn huỳnh quang — ống dùng cho đèn com-pắc', '85393120': 'Bóng đèn huỳnh quang — ống thẳng',
-    '85393130': 'Bóng đèn huỳnh quang com-pắc có chấn lưu lắp liền', '85393190': 'Bóng đèn huỳnh quang ca-tốt nóng — loại khác',
-    '85393200': 'Bóng đèn hơi thủy ngân / natri / ha-lo-gien kim loại', '85393910': 'Bóng đèn phóng điện — ống dùng cho đèn com-pắc',
-    '85393920': 'Bóng đèn CCFL — màn hình dẹt', '85393940': 'Bóng đèn CCFL — loại khác',
-    '85393990': 'Bóng đèn phóng điện — loại khác', '8539399010': 'Đèn ống phóng điện — trang trí / công cộng',
-    '8539399020': 'Bóng đèn phóng điện — xe có động cơ / xe đạp', '8539399090': 'Bóng đèn phóng điện — loại khác',
-    '85394100': 'Bóng đèn hồ quang', '85394900': 'Bóng đèn tia cực tím / hồng ngoại',
-    '85395100': 'Mô-đun LED', '8539510010': 'Mô-đun LED — dùng cho đèn chiếu sáng',
-    '8539510020': 'Mô-đun LED — dùng cho xe có động cơ', '8539510090': 'Mô-đun LED — loại khác',
-    '85395210': 'Bóng đèn LED — đầu đèn ren xoáy', '85395290': 'Bóng đèn LED — loại khác',
-    '85399010': 'Bộ phận bóng đèn — nắp / đui nhôm huỳnh quang', '85399020': 'Bộ phận bóng đèn — dùng cho xe có động cơ',
-    '85399030': 'Bộ phận mô-đun LED', '8539903010': 'Bộ phận mô-đun LED — dùng cho đèn chiếu sáng',
-    '8539903090': 'Bộ phận mô-đun LED — loại khác', '85399090': 'Bộ phận bóng đèn — loại khác',
-    '94051110': 'Bộ đèn LED — đèn phòng mổ', '94051191': 'Bộ đèn LED — đèn rọi',
-    '94051199': 'Bộ đèn LED — loại khác (trần/tường)', '94051910': 'Bộ đèn loại khác — đèn phòng mổ',
-    '94051991': 'Bộ đèn loại khác — đèn rọi', '94051992': 'Bộ đèn loại khác — đèn huỳnh quang',
-    '94051999': 'Bộ đèn loại khác — loại khác (trần/tường)', '94052110': 'Đèn bàn/giường/cây LED — đèn phòng mổ',
-    '94052190': 'Đèn bàn/giường/cây LED — loại khác', '9405219010': 'Đèn bàn/giường/cây LED — đèn sân khấu',
-    '9405219090': 'Đèn bàn/giường/cây LED — loại khác', '94052910': 'Đèn bàn/giường/cây loại khác — đèn phòng mổ',
-    '94052990': 'Đèn bàn/giường/cây loại khác — loại khác', '9405299010': 'Đèn bàn/giường/cây — đèn sân khấu',
-    '9405299090': 'Đèn bàn/giường/cây — loại khác', '94053100': 'Dây chiếu sáng Nô-en LED',
-    '94053900': 'Dây chiếu sáng Nô-en loại khác', '94054110': 'Đèn LED — đèn pha',
-    '94054120': 'Đèn LED — đèn rọi', '94054130': 'Đèn LED — tín hiệu sân bay / đường sắt / tàu thủy',
-    '94054140': 'Đèn LED — chiếu sáng công cộng / ngoài trời', '94054190': 'Đèn LED — loại khác',
-    '9405419010': 'Đèn LED — đèn sân khấu', '9405419090': 'Đèn LED — loại khác',
-    '94054210': 'Đèn điện LED khác — đèn pha', '94054220': 'Đèn điện LED khác — đèn rọi',
-    '94054230': 'Đèn điện LED khác — tín hiệu sân bay / đường sắt', '94054240': 'Đèn LED — báo hiệu thiết bị gia dụng 85.16',
-    '94054250': 'Đèn điện LED khác — chiếu sáng công cộng', '94054260': 'Đèn điện LED khác — chiếu sáng ngoài trời',
-    '94054290': 'Đèn điện LED khác — loại khác', '9405429010': 'Đèn điện LED khác — đèn sân khấu',
-    '9405429090': 'Đèn điện LED khác — loại khác', '94054910': 'Đèn điện loại khác — đèn pha',
-    '94054920': 'Đèn điện loại khác — đèn rọi', '94054930': 'Đèn điện loại khác — tín hiệu sân bay / đường sắt',
-    '94054940': 'Đèn điện loại khác — báo hiệu thiết bị gia dụng', '94054950': 'Đèn điện loại khác — chiếu sáng công cộng',
-    '94054960': 'Đèn điện loại khác — chiếu sáng ngoài trời', '94054990': 'Đèn điện loại khác — loại khác',
-    '9405499010': 'Đèn điện loại khác — đèn sân khấu', '9405499090': 'Đèn điện loại khác — loại khác',
-    '94055011': 'Đèn dầu bằng đồng — nghi lễ tôn giáo', '94055019': 'Đèn dầu — loại khác',
-    '94055040': 'Đèn bão', '94055050': 'Đèn thợ mỏ / khai thác đá', '94055090': 'Đèn không điện — loại khác',
-    '94056110': 'Biển hiệu LED — cảnh báo / tên đường / giao thông', '94056190': 'Biển hiệu LED — loại khác',
-    '94056910': 'Biển hiệu loại khác — cảnh báo / tên đường / giao thông', '94056990': 'Biển hiệu loại khác — loại khác',
-    '94059110': 'Bộ phận thủy tinh — đèn phòng mổ', '94059120': 'Bộ phận thủy tinh — đèn rọi',
-    '94059140': 'Bộ phận thủy tinh — chao đèn / thông phong', '94059150': 'Bộ phận thủy tinh — đèn pha',
-    '94059190': 'Bộ phận thủy tinh — loại khác', '94059210': 'Bộ phận plastic — đèn phòng mổ',
-    '94059220': 'Bộ phận plastic — đèn rọi', '94059230': 'Bộ phận plastic — đèn pha',
-    '94059290': 'Bộ phận plastic — loại khác', '94059910': 'Bộ phận đèn — chụp đèn vải',
-    '94059920': 'Bộ phận đèn — chụp đèn vật liệu khác', '94059930': 'Bộ phận đèn — của đèn dầu 9405.50.11/9405.50.19',
-    '94059940': 'Bộ phận đèn — của đèn pha / đèn rọi', '94059950': 'Bộ phận đèn — gốm / sứ / kim loại',
-    '94059990': 'Bộ phận đèn — loại khác', '85161011': 'Bình thủy điện gia dụng',
+    # --- 8539: HQ business categories ---
+    '85391010': 'led khác', '85391090': 'led khác',
+    '85392120': 'led khác', '85392130': 'led khác',
+    '85392140': 'led khác', '85392190': 'led khác',
+    '85392231': 'led trang trí', '85392232': 'led khác',
+    '85392233': 'led tube', '85392239': 'led khác',
+    '85392291': 'led trang trí', '85392293': 'led tube',
+    '85392299': 'led khác',
+    '85392910': 'led khác', '85392920': 'led khác',
+    '85392930': 'led khác', '85392941': 'led khác',
+    '85392949': 'led khác', '85392950': 'led khác',
+    '85392960': 'led khác', '85392990': 'led khác',
+    '85393110': 'led tube', '85393120': 'led tube',
+    '85393130': 'led bán nguyệt', '85393190': 'led tube',
+    '85393200': 'led khác', '85393940': 'led khác',
+    '85393990': 'led khác', '8539399090': 'led khác',
+    '85394100': 'led khác', '85394900': 'led khác',
+    '85395100': 'led khác', '8539510010': 'led khác',
+    '8539510090': 'led bulb',
+    '85395210': 'led bulb', '85395290': 'led khác',
+    '85399010': 'led bulb', '85399020': 'led khác',
+    '85399030': 'led khác', '85399090': 'led bulb',
+    # --- 9405: HQ business categories ---
+    '94051110': 'led khác', '94051191': 'tracklight',
+    '94051199': 'led trang trí', '94051910': 'led khác',
+    '94051991': 'led downlight', '94051992': 'led tube',
+    '94051999': 'led trang trí',
+    '94052110': 'led khác', '94052190': 'led trang trí',
+    '94052910': 'led khác', '94052990': 'led trang trí',
+    '94053100': 'led trang trí', '94053900': 'led trang trí',
+    '94054110': 'flood', '94054120': 'led khác',
+    '94054130': 'led khác', '94054140': 'led khác',
+    '94054190': 'led khác',
+    '94054210': 'flood', '94054220': 'led khác',
+    '94054230': 'led khác', '94054240': 'led khác',
+    '94054250': 'led chiếu sáng đường', '94054260': 'led cảnh quan',
+    '94054290': 'led khác',
+    '94054910': 'flood', '94054920': 'led khác',
+    '94054930': 'led khác', '94054940': 'led khác',
+    '94054950': 'flood', '94054960': 'led khác',
+    '94054990': 'led khác',
+    '94055011': 'led trang trí', '94055019': 'led trang trí',
+    '94055050': 'led chống cháy/ ẩm', '94055090': 'flood',
+    '94056110': 'led khẩn cấp', '94056190': 'led khẩn cấp',
+    '94056910': 'led khác', '94056990': 'led khác',
+    '94059110': 'led khác', '94059120': 'led khác',
+    '94059140': 'led trang trí', '94059150': 'flood',
+    '94059190': 'led trang trí', '94059210': 'led khác',
+    '94059220': 'led downlight', '94059230': 'flood',
+    '94059290': 'led bulb',
+    '94059910': 'led trang trí', '94059920': 'led trang trí',
+    '94059930': 'flood', '94059940': 'flood',
+    '94059950': 'led trang trí', '94059990': 'led trang trí',
+    # --- 8516: Technical descriptions (unchanged) ---
+    '85161011': 'Bình thủy điện gia dụng',
     '85161019': 'Dụng cụ đun nước nóng — loại khác', '85161030': 'Dụng cụ đun nước nóng kiểu nhúng',
     '85162100': 'Dụng cụ điện làm nóng không gian — bức xạ giữ nhiệt', '85162900': 'Dụng cụ điện làm nóng không gian — loại khác',
     '85163100': 'Máy sấy tóc', '85163200': 'Dụng cụ làm tóc khác', '85163300': 'Máy sấy khô tay',
@@ -174,17 +180,38 @@ HS_TYPE_MAP = {
     '70200011': 'LK', '70200019': 'LK', '70200020': 'LK',
     '70200030': 'LK', '70200040': 'LK', '70200090': 'NC',
     '85391010': 'NC', '85391090': 'NC', '85392120': 'NC', '85392130': 'NC',
-    '85392140': 'NC', '85392190': 'NC', '85392220': 'NC', '85392231': 'NC',
+    '85392140': 'NC', '85392190': 'NC', '85392231': 'NC',
     '85392232': 'NC', '85392233': 'NC', '85392239': 'NC', '85392291': 'NC',
     '85392293': 'NC', '85392299': 'NC', '85392910': 'NC', '85392920': 'NC',
     '85392930': 'NC', '85392941': 'NC', '85392949': 'NC', '85392950': 'NC',
-    '85392960': 'NC', '8539296010': 'NC', '8539296090': 'NC', '85392990': 'NC',
+    '85392960': 'NC', '85392990': 'NC',
     '85393110': 'NC', '85393120': 'NC', '85393130': 'NC', '85393190': 'NC',
-    '85393200': 'NC', '85393910': 'NC', '85393920': 'NC', '85393940': 'NC',
-    '85393990': 'NC', '8539399010': 'NC', '8539399020': 'NC', '8539399090': 'NC',
-    '85394100': 'NC', '85394900': 'NC', '85395100': 'LK', '85395210': 'NC',
-    '85395290': 'NC', '85399010': 'LK', '85399020': 'LK', '85399030': 'LK',
-    '85399090': 'LK', '85167910': 'NC', '85168010': 'LK', '85169090': 'LK',
+    '85393200': 'NC', '85393940': 'NC',
+    '85393990': 'NC', '8539399090': 'NC',
+    '85394100': 'NC', '85394900': 'NC', '85395100': 'LK',
+    '8539510010': 'NC', '8539510090': 'LK',
+    '85395210': 'NC', '85395290': 'LK',
+    '85399010': 'LK', '85399020': 'LK', '85399030': 'LK',
+    '85399090': 'LK',
+    # --- 9405: HQ-derived Loại ---
+    '94051110': 'NC', '94051191': 'NC', '94051199': 'NC',
+    '94051910': 'NC', '94051991': 'NC', '94051992': 'NC', '94051999': 'NC',
+    '94052110': 'NC', '94052190': 'NC', '94052910': 'NC', '94052990': 'NC',
+    '94053100': 'NC', '94053900': 'NC',
+    '94054110': 'NC', '94054120': 'NC', '94054130': 'NC', '94054140': 'NC', '94054190': 'NC',
+    '94054210': 'NC', '94054220': 'NC', '94054230': 'NC', '94054240': 'NC',
+    '94054250': 'NC', '94054260': 'NC', '94054290': 'NC',
+    '94054910': 'NC', '94054920': 'NC', '94054930': 'NC', '94054940': 'NC',
+    '94054950': 'NC', '94054960': 'NC', '94054990': 'NC',
+    '94055011': 'NC', '94055019': 'NC', '94055050': 'NC', '94055090': 'NC',
+    '94056110': 'NC', '94056190': 'NC', '94056910': 'NC', '94056990': 'NC',
+    '94059110': 'NC', '94059120': 'NC',
+    '94059140': 'LK', '94059150': 'LK', '94059190': 'LK',
+    '94059210': 'LK', '94059220': 'LK', '94059230': 'LK', '94059290': 'LK',
+    '94059910': 'LK', '94059920': 'LK', '94059930': 'LK',
+    '94059940': 'LK', '94059950': 'LK', '94059990': 'LK',
+    # --- Other groups (unchanged) ---
+    '85167910': 'NC', '85168010': 'LK', '85169090': 'LK',
     '850410': 'LK', '850421': 'NC', '850422': 'NC', '850423': 'NC',
     '850431': 'NC', '850432': 'NC', '850433': 'NC', '850434': 'NC',
     '850440': 'NC', '85044011': 'NC', '85044019': 'NC', '85044020': 'NC',
@@ -236,6 +263,7 @@ class DictionaryGenerator:
             self.hs_taxonomy = HS_TAXONOMY
             self.hs_type_map = HS_TYPE_MAP
             self.dong_sp_map = DONG_SP_MAP
+        self.dong_sp_overrides = DONG_SP_OVERRIDES
 
     def clean_text(self, text):
         if pd.isna(text): return ''
@@ -466,6 +494,65 @@ class DictionaryGenerator:
         raw_df['_tok'] = raw_df['_clean'].apply(lambda x: self.tokenize_vi(x))
         raw_df = raw_df[raw_df['_tok'].str.len() > 0].reset_index(drop=True)
         
+        # === FAST PATH: If raw file already has HQ business columns, skip clustering ===
+        hq_cols = {'Dòng SP', 'Loại', 'Lớp 1'}
+        if hq_cols.issubset(set(raw_df.columns)):
+            print("DEBUG: Pre-labeled HQ data detected. Using fast-path (skip DBSCAN/LLM).")
+            if progress_callback:
+                progress_callback(1, 1, "Pre-labeled data detected, grouping...")
+            
+            lop2_col = 'Lớp 2' if 'Lớp 2' in raw_df.columns else None
+            group_cols = ['HS_Code', 'Dòng SP', 'Loại', 'Lớp 1']
+            if lop2_col:
+                group_cols.append(lop2_col)
+            
+            # Clean category values
+            for col in group_cols[1:]:  # skip HS_Code
+                raw_df[col] = raw_df[col].fillna('0').astype(str).str.strip()
+            
+            all_rows = []
+            cluster_counter = 0
+            cluster_map = {}  # (hs, group_key) -> cluster_id
+            
+            for keys, grp in raw_df.groupby(group_cols, sort=False):
+                hs = keys[0]
+                dong_sp = keys[1]
+                loai = keys[2]
+                lop1 = keys[3]
+                lop2 = keys[4] if lop2_col else '0'
+                
+                group_key = (hs, dong_sp, loai, lop1, lop2)
+                if group_key not in cluster_map:
+                    cluster_map[group_key] = cluster_counter
+                    cluster_counter += 1
+                cid = cluster_map[group_key]
+                
+                raw_df.loc[grp.index, '_cluster'] = cid
+                
+                all_rows.append({
+                    'Mã HS': hs,
+                    'Dòng SP': dong_sp if dong_sp != '0' else (self.dong_sp_overrides.get(hs) or self.dong_sp_map.get(hs[:4], f'SP {hs[:4]}')),
+                    'Loại': loai if loai != '0' else self.hs_type_map.get(hs, 'NC'),
+                    'Lớp 1': lop1 if lop1 != '0' else self.hs_taxonomy.get(hs, 'Chưa phân loại'),
+                    'Lớp 2': lop2 if lop2 != '0' else '',
+                    'Keyword': '',
+                    'Cluster_ID': int(cid),
+                    'Số lượng SP': len(grp),
+                    'Mô tả mẫu': str(grp['Detailed_Product'].iloc[0])[:120],
+                })
+            
+            df = pd.DataFrame(all_rows)
+            # Merge duplicate groups
+            merged = []
+            if not df.empty:
+                merge_cols = ['Mã HS', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2']
+                for _, g in df.groupby(merge_cols, sort=False):
+                    best = g.loc[g['Số lượng SP'].idxmax()].copy()
+                    best['Số lượng SP'] = g['Số lượng SP'].sum()
+                    merged.append(best.to_dict())
+            return pd.DataFrame(merged).sort_values(['Mã HS', 'Số lượng SP'], ascending=[True, False]).reset_index(drop=True), raw_df
+        
+        # === STANDARD PATH: Clustering via DBSCAN ===
         all_rows = []
         unique_hs = sorted(raw_df['HS_Code'].unique())
         total_hs = len(unique_hs)
@@ -526,7 +613,7 @@ class DictionaryGenerator:
                 fallback = get_dynamic_name(3)
                 lop1 = fallback.title() if fallback else 'Chưa phân loại'
             
-            dong = self.dong_sp_map.get(hs[:4])
+            dong = self.dong_sp_overrides.get(hs) or self.dong_sp_map.get(hs[:4])
             if not dong:
                 fallback = get_dynamic_name(2)
                 dong = f"SP {fallback.upper()}" if fallback else f"SP {hs[:4]}"
@@ -684,3 +771,87 @@ class DictionaryGenerator:
         print(f"DEBUG: Keyword extraction matches: {cluster_id_matches} via Cluster_ID, {fallback_matches} via Fallback Regex.")
         tax_df['Keyword'] = res
         return tax_df.drop(columns=['Mã HS_Internal'], errors='ignore')
+
+    def generate_dictionary_from_hq(self, raw_df, progress_callback=None):
+        """
+        Fast-path 1-step dictionary generation directly from HQ labeled files.
+        Skips DBSCAN clustering and LLM labeling.
+        """
+        raw_df = raw_df.copy()
+        raw_cols = {str(c).strip(): c for c in raw_df.columns}
+        
+        # Identify columns
+        hs_col = next((raw_cols[cand] for cand in ['HS_Code', 'Mã HS', 'HS'] if cand in raw_cols), None)
+        prod_col = next((raw_cols[cand] for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product'] if cand in raw_cols), None)
+        
+        if not hs_col:
+            raise ValueError(f"Missing HS Code column. Found: {list(raw_cols.keys())}")
+        if not prod_col:
+            raise ValueError(f"Missing Product description column. Found: {list(raw_cols.keys())}")
+            
+        group_cols = ['Dòng SP', 'Loại', 'Lớp 1']
+        if not all(col in raw_df.columns for col in group_cols):
+            raise ValueError(f"Missing one of required HQ columns: {group_cols}")
+            
+        lop2_col = 'Lớp 2' if 'Lớp 2' in raw_df.columns else None
+        
+        if progress_callback:
+            progress_callback(1, 3, "Cleaning and tokenizing text...")
+            
+        raw_df['HS_Code_Internal'] = raw_df[hs_col].astype(str).apply(lambda x: re.sub(r'\D', '', x))
+        raw_df['Detailed_Product_Internal'] = raw_df[prod_col].astype(str)
+        raw_df['_clean'] = raw_df['Detailed_Product_Internal'].apply(self.clean_text)
+        raw_df['_tok'] = raw_df['_clean'].apply(lambda x: ' '.join(self.tokenize_vi(x, True)))
+        
+        for col in group_cols + ([lop2_col] if lop2_col else []):
+            raw_df[col] = raw_df[col].fillna('0').astype(str).str.strip()
+            
+        if progress_callback:
+            progress_callback(2, 3, "Grouping and extracting keywords...")
+            
+        results = []
+        unique_hs = raw_df['HS_Code_Internal'].unique()
+        
+        for hs in unique_hs:
+            sub_raw = raw_df[raw_df['HS_Code_Internal'] == hs]
+            
+            # Group by HQ labels within this HS code
+            g_cols = group_cols + ([lop2_col] if lop2_col else [])
+            groups = sub_raw.groupby(g_cols, sort=False)
+            
+            docs = {}
+            fb = {}
+            group_keys = []
+            
+            for i, (keys, grp) in enumerate(groups):
+                dong_sp = keys[0]
+                loai = keys[1]
+                lop1 = keys[2]
+                lop2 = keys[3] if lop2_col else '0'
+                
+                docs[i] = grp['_tok'].tolist()
+                fb[i] = lop2 if (lop2 and lop2.lower() not in ('nan', '0', '')) else lop1
+                group_keys.append({
+                    'Dòng SP': dong_sp if dong_sp != '0' else (self.dong_sp_overrides.get(hs) or self.dong_sp_map.get(hs[:4], f'SP {hs[:4]}')),
+                    'Loại': loai if loai != '0' else self.hs_type_map.get(hs, 'NC'),
+                    'Lớp 1': lop1 if lop1 != '0' else self.hs_taxonomy.get(hs, 'Chưa phân loại'),
+                    'Lớp 2': lop2 if lop2 != '0' else '',
+                    'Mã HS': hs,
+                    'Số lượng SP': len(grp)
+                })
+                
+            kw_m = self.extract_keywords_ai(docs, 12, fb)
+            
+            for i, meta in enumerate(group_keys):
+                meta['Keyword'] = kw_m.get(i, '')
+                results.append(meta)
+                
+        if progress_callback:
+            progress_callback(3, 3, "Dictionary generation completed.")
+            
+        df_res = pd.DataFrame(results)
+        # Reorder columns to standard format
+        cols_order = ['Keyword', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Mã HS', 'Số lượng SP']
+        df_res = df_res[[c for c in cols_order if c in df_res.columns]]
+        return df_res.sort_values(['Mã HS', 'Số lượng SP'], ascending=[True, False]).reset_index(drop=True)
+

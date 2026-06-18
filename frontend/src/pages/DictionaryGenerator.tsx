@@ -4,6 +4,9 @@ import DictionaryGeneratorWizard from './DictionaryGeneratorWizard';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Sparkles, Zap, Search, FileText } from 'lucide-react';
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import DirectDictionaryGenerator from './DirectDictionaryGenerator';
+
 const DictionaryGenerator = () => {
   const navigate = useNavigate();
 
@@ -12,15 +15,30 @@ const DictionaryGenerator = () => {
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold tracking-tight">AI Dictionary Generator</h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Create high-quality product dictionaries automatically using AI clustering and LLM labeling.
+          Create high-quality product dictionaries automatically using AI clustering or directly from HQ data.
         </p>
       </div>
       
-      <DictionaryGeneratorWizard onComplete={() => {
-        setTimeout(() => {
-          navigate('/dictionary');
-        }, 2000);
-      }} />
+      <Tabs defaultValue="direct" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 mb-8">
+          <TabsTrigger value="direct">Direct Mode (HQ Files)</TabsTrigger>
+          <TabsTrigger value="wizard">Standard Mode (Raw Files)</TabsTrigger>
+        </TabsList>
+        <TabsContent value="direct">
+          <DirectDictionaryGenerator onComplete={() => {
+            setTimeout(() => {
+              navigate('/dictionary');
+            }, 1000);
+          }} />
+        </TabsContent>
+        <TabsContent value="wizard">
+          <DictionaryGeneratorWizard onComplete={() => {
+            setTimeout(() => {
+              navigate('/dictionary');
+            }, 2000);
+          }} />
+        </TabsContent>
+      </Tabs>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="flex flex-col items-center text-center space-y-2 p-4">

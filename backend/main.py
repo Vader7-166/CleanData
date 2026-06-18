@@ -12,6 +12,7 @@ import shutil
 import pandas as pd
 import numpy as np
 import os
+import re
 import uuid
 import asyncio
 import time
@@ -1241,6 +1242,86 @@ async def generate_draft(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error initiating draft generation: {str(e)}")
+
+@app.post("/api/dictionaries/generate/hq-direct")
+async def generate_hq_direct(
+    files: List[UploadFile] = File(...),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """1-Step Dictionary Generation from HQ Labeled files"""
+    all_dfs = []
+    for file in files:
+        if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
+            continue
+        content = await file.read()
+        df = load_robust_df(content, file.filename)
+        all_dfs.append(df)
+        
+    if not all_dfs:
+        raise HTTPException(status_code=400, detail="No valid .xlsx or .csv files uploaded")
+        
+    try:
+        raw_df = pd.concat(all_dfs, ignore_index=True)
+        db_tax = _load_db_taxonomy()
+        generator = DictionaryGenerator(db_taxonomy=db_tax)
+        df_res = generator.generate_dictionary_from_hq(raw_df)
+        
+        # Replace NaNs for JSON serialization
+        df_res = df_res.replace({np.nan: None})
+        preview_data = df_res.to_dict(orient="records")
+        
+        return {"message": "Success", "data": preview_data}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating from HQ files: {str(e)}")
+
+class HQDirectSaveRequest(BaseModel):
+    dictionary_name: str
+    data: list
+
+@app.post("/api/dictionaries/generate/hq-direct/save")
+def save_hq_direct_dictionary(
+    request: HQDirectSaveRequest,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(database.get_db)
+):
+    dictionary_name = request.dictionary_name
+    if not dictionary_name.endswith('.csv'):
+        dictionary_name += '.csv'
+    
+    df = pd.DataFrame(request.data)
+    
+    # Ensure correct column order
+    cols_order = ['Keyword', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Mã HS', 'Số lượng SP']
+    df = df[[c for c in cols_order if c in df.columns]]
+    
+    file_path = os.path.join(DICTIONARY_STORAGE_PATH, dictionary_name)
+    df.to_csv(file_path, index=False, encoding="utf-8-sig")
+    # Auto-extract HS code prefixes from the dictionary CSV
+    hs_prefixes_str = None
+    if 'Mã HS' in df.columns:
+        prefixes = set()
+        for code in df['Mã HS'].dropna().astype(str):
+            clean = re.sub(r'\D', '', code)
+            if len(clean) >= 4:
+                prefixes.add(clean[:4])
+        if prefixes:
+            hs_prefixes_str = ','.join(sorted(prefixes))
+            
+    count = db.query(models.Dictionary).count()
+    is_active = (count == 0)
+    
+    db_dict = models.Dictionary(
+        filename=dictionary_name,
+        hs_code_prefixes=hs_prefixes_str,
+        user_id=current_user.id,
+        is_active=is_active
+    )
+    db.add(db_dict)
+    db.commit()
+    db.refresh(db_dict)
+    
+    return {"message": "Dictionary saved successfully", "id": db_dict.id}
 
 @app.get("/api/dictionaries/generate/status/{job_id}")
 def get_generation_status(job_id: str, current_user: models.User = Depends(auth.get_current_user)):
