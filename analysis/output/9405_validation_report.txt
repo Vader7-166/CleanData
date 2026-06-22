@@ -1,0 +1,108 @@
+======================================================================
+BÁO CÁO KIỂM CHỨNG PIPELINE DICT -> MODEL
+File: 9405-XK-Th12.2025.xlsx
+Thời gian: 2026-06-22 23:29:44
+======================================================================
+
+1. TỔNG QUAN
+   Tổng số dòng: 30,273
+   Tổng giá trị (USD): 285,598,757.54
+   Tổng số lượng: 57,905,390
+   Số dòng có Mã HS: 30,273 (100.0%)
+   Số Mã HS duy nhất: 44
+
+2. PHÂN PHỐI NGUỒN XỬ LÝ
+   Dict match:      4,280 ( 14.1%)
+   AI fallback:    25,993 ( 85.9%)
+   Không xử lý:         0 (  0.0%)
+   ---
+   Tự động duyệt:  18,205 ( 60.1%)
+   Cần kiểm tra:   12,068 ( 39.9%)
+
+3. PHÂN PHỐI DÒNG SP
+   SP LED                   : 29,932 ( 98.9%)
+   SP truyền thống          :    323 (  1.1%)
+   đèn uv                   :     14 (  0.0%)
+   SP khác                  :      4 (  0.0%)
+
+4. PHÂN PHỐI LOẠI
+   NC        : 24,984 ( 82.5%)
+   LK        :  5,288 ( 17.5%)
+   không_có  :      1 (  0.0%)
+
+5. TOP 15 LỚP 1
+   led khác                      :  9,986 ( 33.0%)
+   không_có                      :  7,314 ( 24.2%)
+   led trang trí                 :  6,489 ( 21.4%)
+   led cảnh quan                 :  1,370 (  4.5%)
+   led gắn tường                 :    977 (  3.2%)
+   led ốp trần                   :    835 (  2.8%)
+   flood                         :    596 (  2.0%)
+   led downlight                 :    507 (  1.7%)
+   highbay                       :    476 (  1.6%)
+   led khẩn cấp                  :    473 (  1.6%)
+   led bulb                      :    355 (  1.2%)
+   led panel lớn                 :    194 (  0.6%)
+   led tube                      :    120 (  0.4%)
+   led dây                       :    101 (  0.3%)
+   led panel                     :     90 (  0.3%)
+
+6. TOP 15 LỚP 2
+   không_có                      : 29,554 ( 97.6%)
+   led solar                     :    277 (  0.9%)
+   đèn lồng                      :    226 (  0.7%)
+   đèn chùm                      :     79 (  0.3%)
+   đèn báo hiệu                  :     47 (  0.2%)
+   đèn bàn                       :     26 (  0.1%)
+   đèn ngủ                       :     26 (  0.1%)
+   nam châm                      :     18 (  0.1%)
+   đèn trần                      :      7 (  0.0%)
+   đèn treo thả                  :      5 (  0.0%)
+   đèn tường                     :      3 (  0.0%)
+   đèn sàn                       :      3 (  0.0%)
+   đèn thờ                       :      2 (  0.0%)
+
+7. NGUỒN vs TRẠNG THÁI
+   ai           -> Cần kiểm tra                       : 12,068
+   ai           -> Tự động duyệt (AI)                 : 13,925
+   dict         -> Tự động duyệt (Từ điển - Điểm: 10) :    162
+   dict         -> Tự động duyệt (Từ điển - Điểm: 11) :     64
+   dict         -> Tự động duyệt (Từ điển - Điểm: 13) :      7
+   dict         -> Tự động duyệt (Từ điển - Điểm: 16) :      1
+   dict         -> Tự động duyệt (Từ điển - Điểm: 18) :     23
+   dict         -> Tự động duyệt (Từ điển - Điểm: 19) :     16
+   dict         -> Tự động duyệt (Từ điển - Điểm: 22) :      2
+   dict         -> Tự động duyệt (Từ điển - Điểm: 25) :  1,273
+   dict         -> Tự động duyệt (Từ điển - Điểm: 26) :      1
+   dict         -> Tự động duyệt (Từ điển - Điểm: 27) :      5
+   dict         -> Tự động duyệt (Từ điển - Điểm: 34) :      2
+   dict         -> Tự động duyệt (Từ điển - Điểm: 35) :      1
+   dict         -> Tự động duyệt (Từ điển - Điểm: 50) :      1
+   dict         -> Tự động duyệt (Từ điển - Điểm: 8)  :      1
+   dict         -> Tự động duyệt (Từ điển - Điểm: 9)  :  2,721
+
+8. KIỂM TRA VỚI HS COMPANY MAPPING
+   Số dòng có HS trong mapping: 30,273
+   Dòng SP match (top+alt): 30,226 (99.8%)
+   Dòng SP mismatch:         47 (0.2%)
+   Loại match (top):         28,444 (94.0%)
+   Lớp 1 match (top):        14,150 (46.7%)
+   Lớp 2 match (top):        28,175 (93.1%)
+
+   Top 5 Dòng SP expected có nhiều mismatch nhất:
+     SP LED: 338 dòng
+     SP truyền thống: 39 dòng
+
+9. CROSS-REFERENCE VS HQ 2025
+   Số HS code chung: 44
+   Top-1 Dòng SP agreement: 40/44 (90.9%)
+   Top-1 Loại agreement:    42/44 (95.5%)
+   Top-1 Lớp 1 agreement:   22/44 (50.0%)
+
+   HS codes có phân phối Dòng SP khác HQ 2025 (n>=5):
+     94055019: overlap=17%, HQ=SP truyền thống, Pred=SP LED, n_HQ=218, n_pred=29
+     94051992: overlap=41%, HQ=SP truyền thống, Pred=SP LED, n_HQ=392, n_pred=11
+
+======================================================================
+HẾT BÁO CÁO
+======================================================================

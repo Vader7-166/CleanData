@@ -134,6 +134,11 @@ class DataCleaner:
             print("INFO: CUDA available, enabling cuDNN benchmark.")
 
         self.THRESHOLD = 0.60 if is_multitask else 0.85
+        # Per-head thresholds for multitask: mỗi head phải vượt ngưỡng riêng
+        self.THRESHOLD_DONG_SP = 0.60
+        self.THRESHOLD_LOAI = 0.60
+        self.THRESHOLD_LOP1 = 0.40
+        self.THRESHOLD_LOP2 = 0.60
         self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
         
         self._load_label_standard()
@@ -245,8 +250,13 @@ class DataCleaner:
         val_lop1 = prob_lop1.item()
         val_lop2 = prob_lop2.item()
 
-        # Joint confidence score (product of probabilities)
-        joint_confidence = val_dong * val_loai * val_lop1 * val_lop2
+        # Per-head thresholds: mỗi head phải vượt ngưỡng riêng
+        all_pass = (
+            val_dong >= self.THRESHOLD_DONG_SP and
+            val_loai >= self.THRESHOLD_LOAI and
+            val_lop1 >= self.THRESHOLD_LOP1 and
+            val_lop2 >= self.THRESHOLD_LOP2
+        )
 
         label_dong = self.encoders['dong_sp'].inverse_transform([pred_dong.item()])[0]
         label_loai = self.encoders['loai'].inverse_transform([pred_loai.item()])[0]
@@ -254,9 +264,11 @@ class DataCleaner:
         label_lop2 = self.encoders['lop2'].inverse_transform([pred_lop2.item()])[0]
 
         label = f"{label_dong} | {label_loai} | {label_lop1} | {label_lop2}"
-        status = "Tự động duyệt (AI)" if joint_confidence >= self.THRESHOLD else "Cần kiểm tra"
+        # Confidence = head yếu nhất (min), dễ interpret hơn product
+        confidence = min(val_dong, val_loai, val_lop1, val_lop2)
+        status = "Tự động duyệt (AI)" if all_pass else "Cần kiểm tra"
 
-        return pd.Series([label, round(joint_confidence * 100, 2), status])
+        return pd.Series([label, round(confidence * 100, 2), status])
 
     def predict_dictionary(self, text):
         text_lower = self.clean_text_for_dict(text)
@@ -365,10 +377,20 @@ class DataCleaner:
                 lbl_lop2 = self.encoders['lop2'].inverse_transform(id_lop2_np)
 
                 for idx in range(len(batch_texts)):
-                    conf = float(p_dong_np[idx] * p_loai_np[idx] * p_lop1_np[idx] * p_lop2_np[idx])
+                    p_d = float(p_dong_np[idx])
+                    p_l = float(p_loai_np[idx])
+                    p_1 = float(p_lop1_np[idx])
+                    p_2 = float(p_lop2_np[idx])
+                    all_pass = (
+                        p_d >= self.THRESHOLD_DONG_SP and
+                        p_l >= self.THRESHOLD_LOAI and
+                        p_1 >= self.THRESHOLD_LOP1 and
+                        p_2 >= self.THRESHOLD_LOP2
+                    )
+                    confidence = min(p_d, p_l, p_1, p_2)
                     label = f"{lbl_dong[idx]} | {lbl_loai[idx]} | {lbl_lop1[idx]} | {lbl_lop2[idx]}"
-                    status = "Tự động duyệt (AI)" if conf >= self.THRESHOLD else "Cần kiểm tra"
-                    predictions.append((label, round(conf * 100, 2), status))
+                    status = "Tự động duyệt (AI)" if all_pass else "Cần kiểm tra"
+                    predictions.append((label, round(confidence * 100, 2), status))
             else:
                 probabilities = F.softmax(outputs.logits, dim=-1)
                 max_probs, pred_ids = torch.max(probabilities, dim=-1)

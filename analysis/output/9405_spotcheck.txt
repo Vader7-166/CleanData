@@ -1,0 +1,380 @@
+======================================================================
+SPOT-CHECK: MẪU KIỂM TRA THỦ CÔNG
+Thời gian: 2026-06-22 23:29:44
+======================================================================
+
+──────────────────────────────────────────────────────────────────────
+  DICT MATCH (15 samples)
+──────────────────────────────────────────────────────────────────────
+
+  Sample #1
+  HS_Code:       94051999
+  Product:       Đèn chùm treo trần chưa được gắn bóng đèn - wall lamp W29"H9-1/2"E9" , model 8-4030-4-SN ,hàng do công ty sản xuất,hàng mới 100% #&VN
+  Product_EN:    Chandelier hanging ceiling has not been mounted ball lamp - wall lamp W29"H9-1/2"E9" , model 8-4030-
+  Source:        dict
+  Dong SP:       SP truyền thống
+  Loai:          NC
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #2
+  HS_Code:       94059950
+  Product:       Đế tản nhiệt đèn led, dùng cho đèn led, heat sink, UHB21 100-150W, kích thước: phi 275*68.2mm, chất liệu: hợp kim nhôm ADC12,hàng mới 100% #&VN
+  Product_EN:    Empire radiator lamp led, for lamp led, heat sink, UHB21 100-150W, size: non-275*68.2 mm, material: 
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          LK
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 11)
+
+  Sample #3
+  HS_Code:       94054290
+  Product:       Đèn led trang trí hình nến (Không nhãn hiệu). Vỏ nhựa, gồm 3 màu: hồng, xanh,tím. KT: 3x3x8inch.Số lượng pin:3 pin AAA, điện áp: 3V, không pin kèm the
+  Product_EN:    Led decorative lamp shape candle (Not brands). Plastic casing, consisting of 3 colors: pink, blue,pu
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         đèn lồng
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #4
+  HS_Code:       94051999
+  Product:       3000-16186#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT)16" SATIN OPAL CMNT - OB(3000-16186)Hàng mới 100%#&VN
+  Product_EN:    3000-16186#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT)16" SATIN OPAL CMNT - OB(3000-16186)new 
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #5
+  HS_Code:       94051199
+  Product:       Đèn led panel âm trần 9W (220V/50Hz, DG-T509, DUHAL) đèn trần hoạt động nhờ vào đi ốt phát quang (LED) dùng trong nhà xưởng (hàng mới 100%)#&VN
+  Product_EN:    Led panel ceiling 9W (220V/50Hz, DG-T509, DUHAL) ceiling lights operate thanks to emitting diode (LE
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led panel lớn
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #6
+  HS_Code:       94051999
+  Product:       Đèn thả trang trí ( bằng sắt và thuỷ tinh) Item H894701L-AGB, Kt: 760*1924mm, Hiệu: Hudson valley lighting, mới 100%#&VN
+  Product_EN:    Drop light decorative ( iron and glass) Item H894701L-AGB, Kt: 760*1924mm, Brand: Hudson valley ligh
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #7
+  HS_Code:       94051999
+  Product:       45886BKQ225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) Bath 3Lt (45886BK) Hàng mới 100%#&VN
+  Product_EN:    45886BKQ225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) Bath 3Lt (45886BK) new Goods 100%#&amp
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #8
+  HS_Code:       94051999
+  Product:       4457103-848Q225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) OAK MOORE 3L BATH-848 (4457103-848) Hàng mới 100%#&VN
+  Product_EN:    4457103-848Q225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) OAK MOORE 3L BATH-848 (4457103-848
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #9
+  HS_Code:       94051199
+  Product:       813001753#&Đèn led Panel gắn trần chiếu sáng cho VP,NX:PL5C,24,30/40/50W,83A,,đ/áp:120-277V,h/suất phát quang:110Lm/W,dài: 1195+-0.6mm, rộng: 585+-0.5
+  Product_EN:    813001753#&amp;led Panel mount ceiling lighting for VP,NX:PL5C,24,30/40/50W,83A,,e/voltage:120-277V,
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led panel lớn
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #10
+  HS_Code:       94051999
+  Product:       84670-71#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) JAMESTOWNE 1L XL LANTERN-71 (84670-71) Hàng mới 100%#&VN
+  Product_EN:    84670-71#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) JAMESTOWNE 1L XL LANTERN-71 (84670-71) ne
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #11
+  HS_Code:       94054260
+  Product:       Đèn LED chiếu điểm trong sân vườn: 1002539458, kích thước: 1.62 inch x 10.25 inch x 6.87 inch, (1 thùng = 4 bộ,1 bộ = 1 cái); bộ đèn hoàn chỉnh, mới 1
+  Product_EN:    LED spots in the garden: 1002539458 size: 1.62 inches x 10.25 inches x 6.87 inches (1 carton = 4 set
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         tracklight
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #12
+  HS_Code:       94054990
+  Product:       SNC10325100116B#&Đèn LED Flood Light, Model: RGL-KIVO2-200WJH8A3-BH10SPAM50, công suất: 200W, điện áp: AC120-277V, mới 100%#&VN
+  Product_EN:    SNC10325100116B#&amp;LED Flood Light, Model: RGL-KIVO2-200WJH8A3-BH10SPAM50, power: 200W, voltage: A
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         flood
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #13
+  HS_Code:       94051999
+  Product:       9244BKQ225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) Indoor/Outdoor Wall 2Lt (9244BK) Hàng mới 100%#&VN
+  Product_EN:    9244BKQ225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) Indoor/Outdoor Wall 2Lt (9244BK) new Go
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #14
+  HS_Code:       94051999
+  Product:       9736BKQ225#&ĐÈN LED TRANG TRÍ Outdoor Wall 1Lt (9736BK) Hàng mới 100%#&VN
+  Product_EN:    9736BKQ225#&amp;DECORATION LED LIGHTS Outdoor Wall 1Lt (9736BK) new Goods 100%#&amp;VN
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #15
+  HS_Code:       94051199
+  Product:       WA627024UHCA32-2#&Đèn led gắn tường - 4FT.2-LIGHT WHITE INDUSTRIAL LED STRIP LIGHT WA627024UHCA32-2 (ST702T1850)#&VN
+  Product_EN:    WA627024UHCA32-2#&amp;led wall mount - 4FT.2-LIGHT WHITE INDUSTRIAL LED STRIP LIGHT WA627024UHCA32-2
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led dây
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+──────────────────────────────────────────────────────────────────────
+  AI PREDICT (15 samples)
+──────────────────────────────────────────────────────────────────────
+
+  Sample #1
+  HS_Code:       94051999
+  Product:       Đèn trang trí dạng đèn treo trần (không gồm bóng), model 4965-284, hàng mới 100%#&VN
+  Product_EN:    Decorative lamp shape lamp hanging ceiling (not include ball), model 4965-284, new goods 100%#&amp;V
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    45.6
+  Status:        Cần kiểm tra
+
+  Sample #2
+  HS_Code:       94051199
+  Product:       6624603-112#&Đèn treo (dòng điện 120V, 3 đuôi đèn không kèm bóng, khung đèn bằng sắt, chụp đèn,ốc vít...dùng để thắp sáng), nhãn hiệu: Generation Ligh
+  Product_EN:    6624603-112#&amp;hanging Lights (power lines 120V, 3 led tail light with no shadow, frame lamp, iron
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    48.13
+  Status:        Tự động duyệt (AI)
+
+  Sample #3
+  HS_Code:       94051199
+  Product:       Đèn MS SQR LED TBL LAMP - Model MTSL1055AHB, hàng mới 100%#&VN
+  Product_EN:    Lamp MS SQR LED TBL LAMP - Model MTSL1055AHB, new goods 100%#&amp;VN
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    44.78
+  Status:        Cần kiểm tra
+
+  Sample #4
+  HS_Code:       94056190
+  Product:       Đèn thoát hiểm, điện áp/ công suất: 120V/0.56W- 277V/0.7W, model: 252LG1 (LEDR-1SDT-CEC), mới 100%#&VN
+  Product_EN:    Exit lights, voltage/ power: 120V/0.56 W - 277V/0.7 W, model: 252LG1 (LEDR-1SDT-CEC), new 100%#&amp;
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khẩn cấp
+  Lop 2:         không_có
+  Confidence:    36.04
+  Status:        Cần kiểm tra
+
+  Sample #5
+  HS_Code:       94054290
+  Product:       SP0500#&Đèn led chiếu sáng GL-10000-105W-BP08-(120-277V)-V999100001301(912401707156PYTHN,BP8,120-277V,BP,912401707156)#&KXĐ
+  Product_EN:    SP0500#&amp;led lighting GL-10000-105W-BP08-(120-277V)-V999100001301(912401707156PYTHN,BP8,120-277V,
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    52.9
+  Status:        Tự động duyệt (AI)
+
+  Sample #6
+  HS_Code:       94054990
+  Product:       SNC10325110022H#&Đèn LED wallpack light, Model: WP2FA40, công suất: 40W, điện áp: AC120-277V, mới 100%#&VN
+  Product_EN:    SNC10325110022H#&amp;LED wallpack light, Model: WP2FA40, wattage: 40W, voltage: AC120-277V, new 100%
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    32.71
+  Status:        Cần kiểm tra
+
+  Sample #7
+  HS_Code:       94059990
+  Product:       SNC10325100122F#&Phụ kiện cảm biến thông minh của đèn led, mới 100%#&KXĐ
+  Product_EN:    SNC10325100122F#&amp;accessories smart sensor of led lights, new 100%#&amp;KXĐ
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          LK
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    85.6
+  Status:        Tự động duyệt (AI)
+
+  Sample #8
+  HS_Code:       94054290
+  Product:       104-0110001-0040-0035#&Đèn Led chiếu sáng Strip Fixture, Model: LP01-4FT-40WMES-STRIP-4FT-H-JGSR-02381 02, ĐA:120-277VAC,CS: 24W/32W/40W độ sáng: 35K/
+  Product_EN:    104-0110001-0040-0035#&amp;Led lighting Strip Fixture, Model: LP01-4FT-40WMES-STRIP-4FT-H-JGSR-02381
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    18.56
+  Status:        Cần kiểm tra
+
+  Sample #9
+  HS_Code:       94054140
+  Product:       0T-E50102/NSAN9B-0-424#&Bộ đèn led chiếu sáng ngoài vườn, hiệu IWASAKI , điện áp 100V, công suất: 36.1-35.4W. Hàng mới 100%.#&VN
+  Product_EN:    0T-E50102/NSAN9B-0-424#&amp;led outdoor lighting, garden, brand IWASAKI , voltage 100V, capacity: 36
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    45.35
+  Status:        Tự động duyệt (AI)
+
+  Sample #10
+  HS_Code:       94051199
+  Product:       54283191-E#&Đèn tuyp led 54283191 (1001391103), 120V, 40W, nhãn hiệu Commercial Electric. Hàng mới 100%#&VN
+  Product_EN:    54283191-E#&amp;Lamp tuyp led 54283191 (1001391103), 120V, 40W, brand Commercial Electric. New goods
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    41.75
+  Status:        Tự động duyệt (AI)
+
+  Sample #11
+  HS_Code:       94054290
+  Product:       YJS-019#&Đèn led đã lắp ráp dùng cho màn hình điện tử (LA389HQ1-SP01-LEFT). Hàng mới 100%#&VN
+  Product_EN:    YJS-019#&amp;leds were assembled for electronic screens (LA389HQ1-SP01-LEFT). New goods 100%#&amp;VN
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    64.95
+  Status:        Tự động duyệt (AI)
+
+  Sample #12
+  HS_Code:       94051199
+  Product:       M60056NB#&Đèn trần (dòng điện 120V, 1 đuôi đèn không kèm bóng, khung đèn bằng sắt, chụp đèn,ốc vít...dùng để thắp sáng), không nhãn hiệu, mới 100%#&VN
+  Product_EN:    M60056NB#&amp;ceiling Lights (power lines 120V, 1 tail lamp with no shade, frame lamp, iron lampshad
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    34.4
+  Status:        Cần kiểm tra
+
+  Sample #13
+  HS_Code:       94054290
+  Product:       Đèn Led chống bụi 2*20W-Bóng thủy tinh LED, NSX: Nam Á Vina, MODEL :PL6000-6500K AC 220V/50-60Hz, dùng để chiếu sáng. Mới 100%#&VN
+  Product_EN:    Led anti-dust 2*20W-Ball glass LED, NSX: South Asian Vina, MODEL :PL6000-6500K, AC 220V/50-60Hz, use
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    58.63
+  Status:        Tự động duyệt (AI)
+
+  Sample #14
+  HS_Code:       94051199
+  Product:       Đèn chiếu sáng Led dùng để gắn tường hoặc trần (LED LIGHT), nhãn hiệu: RAB, model: 081617, mới 100%#&VN
+  Product_EN:    Lamp Led lighting is used to mount the wall or ceiling (LED LIGHT), brand: RAB, model: 081617, new 1
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led khác
+  Lop 2:         không_có
+  Confidence:    73.59
+  Status:        Tự động duyệt (AI)
+
+  Sample #15
+  HS_Code:       94051199
+  Product:       564213411#&Đèn Led ốp trần 564213411, 120V, 7W, nhãn hiệu ETI. Mới 100%#&VN
+  Product_EN:    564213411#&amp;recessed Led Lights 564213411, 120V, 7W, brand ETI. New 100%#&amp;VN
+  Source:        ai
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led ốp trần
+  Lop 2:         không_có
+  Confidence:    35.73
+  Status:        Cần kiểm tra
+
+──────────────────────────────────────────────────────────────────────
+  CAN KIEM TRA (0 samples)
+──────────────────────────────────────────────────────────────────────
+
+======================================================================
+HẾT SPOT-CHECK
+======================================================================

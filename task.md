@@ -404,30 +404,6 @@ else:
 - seed: 42
 ```
 
-### Phương án B: Sửa notebook chạy trên Colab
-
-Nếu local GPU không đủ VRAM → sửa `PhoBertmappingv2(85%).ipynb`:
-
-| Thay đổi | Mô tả |
-|---|---|
-| Cell 4 (data prep) | Đọc `train_augmented.csv` thay vì `HQ-2025.csv` |
-| Cell 4 (split) | Tách combined_label → 4 cột riêng, 4 LabelEncoder |
-| Cell 5 (model) | Thay `AutoModelForSequenceClassification` bằng custom multi-head model |
-| Cell 5 (train) | Thêm label_smoothing, weighted loss, fp16=True |
-| Cell 6 (eval) | Tính accuracy riêng từng head + combined |
-
-### Output
-
-| File | Mô tả |
-|---|---|
-| `training/train_multitask.py` | Script train multi-task (local/colab) |
-| `working/model_v2/` | Model mới (safetensors + config) |
-| `working/model_v2/label_encoder_dong_sp.pkl` | LabelEncoder Dòng SP |
-| `working/model_v2/label_encoder_loai.pkl` | LabelEncoder Loại |
-| `working/model_v2/label_encoder_lop1.pkl` | LabelEncoder Lớp 1 |
-| `working/model_v2/label_encoder_lop2.pkl` | LabelEncoder Lớp 2 |
-| `PhoBertmappingv2(85%).ipynb` | (updated) Colab fallback notebook |
-
 ### Kỳ vọng
 
 - Combined accuracy: 38.6% → **55-65%** (multi-task + weighted loss + augmented data)
