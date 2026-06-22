@@ -640,9 +640,9 @@ class DictionaryGenerator:
                 merged.append(best.to_dict())
         return pd.DataFrame(merged).sort_values(['Mã HS', 'Số lượng SP'], ascending=[True, False]).reset_index(drop=True), raw_df
 
-    def extract_keywords_ai(self, group_prods, top_n=12, fallback=None):
+    def extract_keywords_ai(self, group_prods, top_n=12, fallback=None, global_freqs=None):
         indices = list(group_prods.keys())
-        class_f, glob_f = {i: Counter() for i in indices}, Counter()
+        class_f, local_glob_f = {i: Counter() for i in indices}, Counter()
         def ngrams(t, n_min=1, n_max=3):
             res = []
             for n in range(n_min, n_max+1):
@@ -651,22 +651,51 @@ class DictionaryGenerator:
         for i, ps in group_prods.items():
             for p in ps:
                 ns = ngrams(str(p).split())
-                for n in set(ns): class_f[i][n] += 1; glob_f[n] += 1
+                for n in set(ns): class_f[i][n] += 1; local_glob_f[n] += 1
+        
+        actual_glob_f = global_freqs if global_freqs is not None else local_glob_f
+        
+        high_value_kws = {'năng lượng mặt trời', 'solar', 'nlmt'}
         res = {}
         for i in indices:
             cands = []
             for n, lf in class_f[i].items():
-                if not self._is_valid_cluster_token(n): continue
-                p = lf / glob_f[n] if glob_f[n] > 0 else 0
-                cands.append((n, lf * (p**2) * (len(n.split())**0.5)))
-            cands.sort(key=lambda x: x[1], reverse=True)
+                words = n.split()
+                if not any(self._is_valid_cluster_token(w) for w in words): continue
+                
+                gf = actual_glob_f[n] if actual_glob_f[n] > 0 else local_glob_f[n]
+                if gf == 0: gf = 1
+                p = lf / gf
+                if p < 0.05: continue  # MUST be at least 5% pure
+                
+                base_score = len(words)
+                if any(hv in n for hv in high_value_kws):
+                    base_score += 20
+                    
+                score = lf * (p**2) * base_score
+                if len(words) == 1:
+                    score *= 0.5
+                    
+                cands.append((n, score))
+                
+            # Sort by length descending, then score descending
+            cands.sort(key=lambda x: (len(x[0].split()), x[1]), reverse=True)
+            
             top = []
             for w, _ in cands:
-                # Replace underscores with spaces for matcher compatibility
                 clean_w = w.replace('_', ' ')
-                if not any(clean_w in x or x in clean_w for x in top): 
-                    top.append(clean_w)
-                if len(top) >= top_n: break
+                
+                # If clean_w is a substring of any existing word in top, skip it
+                if any(clean_w in x for x in top): 
+                    continue
+                    
+                # If any existing word in top is a substring of clean_w, remove it
+                top = [x for x in top if x not in clean_w]
+                
+                top.append(clean_w)
+                if len(top) >= top_n: 
+                    break
+                    
             res[i] = ', '.join(top) if top else (fallback.get(i, '') if fallback else '')
         return res
 
@@ -731,6 +760,22 @@ class DictionaryGenerator:
 
         cluster_id_matches = 0
         fallback_matches = 0
+        # --- Pre-compute global frequencies across entire dataset ---
+        from collections import Counter
+        def ngrams(t, n_min=1, n_max=3):
+            res = []
+            for n in range(n_min, n_max+1):
+                for i in range(len(t)-n+1): res.append(' '.join(t[i:i+n]))
+            return res
+            
+        global_freqs = Counter()
+        for tok_str in raw_df['_tok']:
+            if not isinstance(tok_str, str) or not tok_str.strip():
+                continue
+            ns = ngrams(tok_str.split())
+            for n in set(ns):
+                global_freqs[n] += 1
+        # -----------------------------------------------------------
 
         # Iterate over unique HS codes to scope purity locally
         hs_codes = tax_df['Mã HS_Internal'].unique()
@@ -764,7 +809,7 @@ class DictionaryGenerator:
                     fallback_matches += 1
 
             # Extract keywords scoped to this HS code
-            kw_m = self.extract_keywords_ai(docs, 12, fb)
+            kw_m = self.extract_keywords_ai(docs, 12, fb, global_freqs=global_freqs)
             for i, k in kw_m.items(): 
                 res[i] = k
 
@@ -809,6 +854,23 @@ class DictionaryGenerator:
         if progress_callback:
             progress_callback(2, 3, "Grouping and extracting keywords...")
             
+        # --- Pre-compute global frequencies across entire dataset ---
+        from collections import Counter
+        def ngrams(t, n_min=1, n_max=3):
+            res = []
+            for n in range(n_min, n_max+1):
+                for i in range(len(t)-n+1): res.append(' '.join(t[i:i+n]))
+            return res
+            
+        global_freqs = Counter()
+        for tok_str in raw_df['_tok']:
+            if not isinstance(tok_str, str) or not tok_str.strip():
+                continue
+            ns = ngrams(tok_str.split())
+            for n in set(ns):
+                global_freqs[n] += 1
+        # -----------------------------------------------------------
+            
         results = []
         unique_hs = raw_df['HS_Code_Internal'].unique()
         
@@ -840,7 +902,7 @@ class DictionaryGenerator:
                     'Số lượng SP': len(grp)
                 })
                 
-            kw_m = self.extract_keywords_ai(docs, 12, fb)
+            kw_m = self.extract_keywords_ai(docs, 12, fb, global_freqs=global_freqs)
             
             for i, meta in enumerate(group_keys):
                 meta['Keyword'] = kw_m.get(i, '')
