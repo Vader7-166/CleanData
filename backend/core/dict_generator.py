@@ -49,6 +49,10 @@ VI_STOPWORDS = {
     'mcz', 'mct', 'med', 'btl', 'sb',
     'pcs', 'set', 'unit', 'pc', 'oz', 'ml', 'mm', 'cm',
     'made', 'use', 'size', 'type', 'part',
+    'honda', 'yamaha', 'họnda', 'hma', 'suzuki', 'kawasaki', 'bawang', 'ying',
+    'hyundai', 'huyndai', 'kia', 'toyota', 'mitsubishi', 'mazda', 'masda',
+    'diamon', 'xương', 'gắn', 'máy', 'bao', 'gồm', 'xuất', 'cụm', 'mã',
+    'hiệu', 'suất', 'bóng', 'chóa', 'nhan',
 }
 
 LABEL_STOPWORDS = VI_STOPWORDS | {
@@ -80,6 +84,12 @@ LABEL_STOPWORDS = VI_STOPWORDS | {
     'nonvac', 'disney', 'sports',
     'ky', 'dt', 'rb', 'db', 'wd', 'wt', 'th', 'sb', 'kr', 'us', 'jp',
     'psg', 'ign', 'ptr', 'hsymbl', 'hsty', 'ctg', 'mcx', 'mea', 'mtr',
+    'honda', 'yamaha', 'họnda', 'hma', 'bawang', 'ying', 'xương',
+    'masda', 'huyndai', 'kia', 'suzuki', 'toyota', 'mitsubishi',
+    'diamon', 'stanley', 'mcdodo', 'hoco', 'superchef',
+    'bền', 'đẹp', 'giá', 'tốt', 'rẻ', 'bán', 'chạy', 'nhất',
+    'thị', 'trường', 'năm', 'sản', 'xuất', 'bảo', 'hành',
+    'thay', 'thế', 'tương', 'đương', 'chính', 'hãng',
 }
 
 # HS_TAXONOMY: Maps HS code -> Lớp 1 business category
@@ -696,15 +706,17 @@ class DictionaryGenerator:
         high_value_kws = {'năng lượng mặt trời', 'solar', 'nlmt'}
         res = {}
         for i in indices:
-            cands = []
+            single_cands = []
+            multi_cands = []
             for n, lf in class_f[i].items():
                 words = n.split()
-                if not any(self._is_valid_cluster_token(w) for w in words): continue
+                if not all(self._is_valid_cluster_token(w) for w in words):
+                    continue
                 
                 gf = actual_glob_f[n] if actual_glob_f[n] > 0 else local_glob_f[n]
                 if gf == 0: gf = 1
                 p = lf / gf
-                if p < 0.05: continue  # MUST be at least 5% pure
+                if p < 0.05: continue
                 
                 base_score = len(words)
                 if any(hv in n for hv in high_value_kws):
@@ -714,24 +726,35 @@ class DictionaryGenerator:
                 if len(words) == 1:
                     score *= 0.5
                     
-                cands.append((n, score))
+                if len(words) == 1:
+                    single_cands.append((n, score))
+                else:
+                    multi_cands.append((n, score))
                 
-            # Sort by length descending, then score descending
-            cands.sort(key=lambda x: (len(x[0].split()), x[1]), reverse=True)
+            single_cands.sort(key=lambda x: x[1], reverse=True)
+            multi_cands.sort(key=lambda x: (len(x[0].split()), x[1]), reverse=True)
+            
+            top_single_n = min(8, top_n)
+            top_multi_n = top_n - top_single_n
             
             top = []
-            for w, _ in cands:
+            
+            for w, _ in single_cands:
                 clean_w = w.replace('_', ' ')
-                
-                # If clean_w is a substring of any existing word in top, skip it
-                if any(clean_w in x for x in top): 
+                if any(clean_w in x for x in top):
                     continue
-                    
-                # If any existing word in top is a substring of clean_w, remove it
                 top = [x for x in top if x not in clean_w]
-                
                 top.append(clean_w)
-                if len(top) >= top_n: 
+                if len(top) >= top_single_n:
+                    break
+            
+            for w, _ in multi_cands:
+                clean_w = w.replace('_', ' ')
+                if any(clean_w in x for x in top):
+                    continue
+                top = [x for x in top if x not in clean_w]
+                top.append(clean_w)
+                if len(top) >= top_n:
                     break
                     
             res[i] = ', '.join(top) if top else (fallback.get(i, '') if fallback else '')

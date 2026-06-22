@@ -1,0 +1,103 @@
+======================================================================
+  ERROR ANALYSIS REPORT - Phase 1
+======================================================================
+
+Test data source: /home/tdh/Intern/CleanData/dataset/HQ 2025.xlsx
+Test rows: 2000
+Dict paths: default
+Total time: 356.2s
+
+--------------------------------------------------
+  1. ACCURACY BREAKDOWN
+--------------------------------------------------
+
+Level                     Correct      Total     Accuracy
+------------------------------------------------------
+dong_sp                      1864       2000      93.20%
+loai                         1667       2000      83.35%
+lop1                         1220       2000      61.00%
+lop2                         1235       2000      61.75%
+combined                      772       2000      38.60%
+
+--------------------------------------------------
+  2. DICT vs AI COMPARISON
+--------------------------------------------------
+
+  dict_coverage_pct: 69.35
+  dict_handled_rows: 1387
+  dict_accuracy: 17.45
+  dict_correct: 242
+  ai_accuracy: 38.6
+  ai_correct: 772
+  total_rows: 2000
+
+  Overlap Analysis:
+    both_correct: 242
+    both_wrong: 1228
+    dict_only_correct: 0
+    ai_only_correct: 530
+
+--------------------------------------------------
+  3. TOP CONFUSED CLASS PAIRS
+--------------------------------------------------
+
+  GT: SP LED | LK | không_có | không_có
+  PD: SP LED | NC | led trang trí | led module
+  Count: 40
+
+  GT: SP LED | NC | led trang trí | không_có
+  PD: SP LED | NC | led trang trí | đèn trần
+  Count: 38
+
+  GT: SP LED | NC | led khác | không_có
+  PD: SP LED | NC | led trang trí | led module
+  Count: 30
+
+  GT: SP LED | LK | không_có | không_có
+  PD: SP LED | NC | led trang trí | đèn cá
+  Count: 29
+
+  GT: SP LED | NC | led trang trí | không_có
+  PD: SP LED | NC | led trang trí | led dây
+  Count: 28
+
+  GT: SP LED | LK | không_có | không_có
+  PD: SP LED | LK | led khác | không_có
+  Count: 28
+
+  GT: SP LED | LK | không_có | không_có
+  PD: SP LED | LK | tracklight | đèn nam châm
+  Count: 23
+
+  GT: SP LED | LK | không_có | không_có
+  PD: SP LED | LK | led ốp trần | đèn trần
+  Count: 22
+
+  GT: SP LED | NC | led downlight | không_có
+  PD: SP LED | NC | led downlight | smart
+  Count: 21
+
+  GT: SP LED | NC | led trang trí | không_có
+  PD: SP LED | NC | led trang trí | đèn bàn
+  Count: 18
+
+
+--------------------------------------------------
+  4. CALIBRATION CURVE
+--------------------------------------------------
+
+     bin       range  count  actual_accuracy  avg_confidence
+   0-0.5    [0, 0.5)    288           0.2604          0.3985
+ 0.5-0.6  [0.5, 0.6)    346           0.3786          0.5495
+ 0.6-0.7  [0.6, 0.7)    333           0.3964          0.6503
+ 0.7-0.8  [0.7, 0.8)    327           0.4159          0.7472
+0.8-0.85 [0.8, 0.85)    153           0.4837          0.8238
+0.85-0.9 [0.85, 0.9)    133           0.4286          0.8729
+0.9-0.95 [0.9, 0.95)    159           0.3208          0.9272
+0.95-1.0 [0.95, 1.0)    261           0.4444          0.9820
+
+  Suggested optimal threshold bin: None
+
+======================================================================
+  END OF REPORT
+======================================================================

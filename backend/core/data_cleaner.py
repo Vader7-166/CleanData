@@ -331,7 +331,7 @@ class DataCleaner:
             
             tasks = []
             for i in range(0, total_rows, chunk_size):
-                chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
+                chunk = df_clean[['Tên hàng raw', 'Mã HS']].iloc[i:i+chunk_size]
                 chunk_data = (chunk, dict_paths)
                 tasks.append(loop.run_in_executor(self.executor, process_chunk, chunk_data))
             
