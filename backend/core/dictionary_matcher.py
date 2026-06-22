@@ -1,5 +1,6 @@
 import ahocorasick
 import re
+import json
 import pandas as pd
 import os
 
@@ -9,6 +10,7 @@ class DictionaryMatcher:
             dict_paths = []
         self.dict_paths = dict_paths if isinstance(dict_paths, list) else [dict_paths]
         self.DICT_THRESHOLD = threshold
+        self._load_label_standard()
         self.HIGH_VALUE_KEYWORDS = [
             "năng lượng mặt trời", "nlmt", "bán nguyệt", "tuýp bán nguyệt", "âm trần", "đèn âm trần",
             "âm nước", "đèn âm nước", "mắt cáo", "rọi ray", "đèn rọi ray", "ống bơ", "ốp trần",
@@ -34,8 +36,46 @@ class DictionaryMatcher:
 
     def clean_text_for_dict(self, text):
         text = str(text).lower()
-        text = re.sub(r'[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]', ' ', text)
+        text = re.sub(r'[^a-z0-9àáạảãâầấậẩẫăằắẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]', ' ', text)
         return ' '.join(text.split()).strip()
+
+    def _load_label_standard(self):
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'label_standard.json')
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                standard = json.load(f)
+            self._dong_sp_aliases = standard.get('dong_sp', {}).get('aliases', {})
+            self._loai_aliases = standard.get('loai', {}).get('aliases', {})
+            self._lop1_aliases = standard.get('lop1', {}).get('aliases', {})
+            self._lop2_aliases = standard.get('lop2', {}).get('aliases', {})
+        except Exception as e:
+            print(f"Warning: Could not load label_standard.json: {e}")
+            self._dong_sp_aliases = {}
+            self._loai_aliases = {}
+            self._lop1_aliases = {}
+            self._lop2_aliases = {}
+
+    def _normalize_label(self, dong_sp, loai, lop1, lop2):
+        d_sp = str(dong_sp).strip()
+        loai = str(loai).strip()
+        lop_1 = str(lop1).strip()
+        lop_2 = str(lop2).strip()
+
+        d_sp = self._dong_sp_aliases.get(d_sp, d_sp)
+        loai = self._loai_aliases.get(loai, loai)
+        lop_1 = self._lop1_aliases.get(lop_1, lop_1.lower())
+        lop_2 = self._lop2_aliases.get(lop_2, lop_2.lower())
+
+        for val in [d_sp, loai, lop_1, lop_2]:
+            if val in ['', 'nan', 'None', '0']:
+                val = 'không_có'
+
+        d_sp = d_sp if d_sp not in ['nan', 'None', '0', ''] else 'không_có'
+        loai = loai if loai not in ['nan', 'None', '0', ''] else 'không_có'
+        lop_1 = lop_1 if lop_1 not in ['nan', 'None', '0', ''] else 'không_có'
+        lop_2 = lop_2 if lop_2 not in ['nan', 'None', '0', ''] else 'không_có'
+
+        return d_sp, loai, lop_1, lop_2
 
     def _load_dict(self):
         mapping_idx = 0
@@ -65,14 +105,12 @@ class DictionaryMatcher:
             kw_str = str(row.get('Keyword', '')).lower()
             keywords = [self.clean_text_for_dict(k) for k in kw_str.split(',') if self.clean_text_for_dict(k) != '']
             
-            d_sp = str(row.get('Dòng SP', 'không_có'))
-            d_sp = d_sp if d_sp not in ['nan', 'None', '0', ''] else 'không_có'
-            loai = str(row.get('Loại', 'không_có'))
-            loai = loai if loai not in ['nan', 'None', '0', ''] else 'không_có'
-            lop_1 = str(row.get('Lớp 1', 'không_có'))
-            lop_1 = lop_1 if lop_1 not in ['nan', 'None', '0', ''] else 'không_có'
-            lop_2 = str(row.get('Lớp 2', 'không_có'))
-            lop_2 = lop_2 if lop_2 not in ['nan', 'None', '0', ''] else 'không_có'
+            d_sp, loai, lop_1, lop_2 = self._normalize_label(
+                row.get('Dòng SP', 'không_có'),
+                row.get('Loại', 'không_có'),
+                row.get('Lớp 1', 'không_có'),
+                row.get('Lớp 2', 'không_có')
+            )
             ma_hs = str(row.get('Mã HS', 'không_có'))
             ma_hs = ma_hs if ma_hs not in ['nan', 'None', '0', ''] else 'không_có'
 

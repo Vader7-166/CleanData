@@ -1,5 +1,6 @@
 import re
 import pickle
+import json
 import pandas as pd
 import numpy as np
 import torch
@@ -46,6 +47,8 @@ class DataCleaner:
         self.THRESHOLD = 0.85
         self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
         
+        self._load_label_standard()
+        
         import concurrent.futures
         import multiprocessing
         self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
@@ -54,6 +57,40 @@ class DataCleaner:
         text = str(text).lower()
         text = re.sub(r'[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]', ' ', text)
         return ' '.join(text.split()).strip()
+
+    def _load_label_standard(self):
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'label_standard.json')
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                standard = json.load(f)
+            self._dong_sp_aliases = standard.get('dong_sp', {}).get('aliases', {})
+            self._loai_aliases = standard.get('loai', {}).get('aliases', {})
+            self._lop1_aliases = standard.get('lop1', {}).get('aliases', {})
+            self._lop2_aliases = standard.get('lop2', {}).get('aliases', {})
+        except Exception as e:
+            print(f"Warning: Could not load label_standard.json: {e}")
+            self._dong_sp_aliases = {}
+            self._loai_aliases = {}
+            self._lop1_aliases = {}
+            self._lop2_aliases = {}
+
+    def _normalize_label(self, dong_sp, loai, lop1, lop2):
+        d_sp = str(dong_sp).strip()
+        lo = str(loai).strip()
+        l1 = str(lop1).strip()
+        l2 = str(lop2).strip()
+
+        d_sp = self._dong_sp_aliases.get(d_sp, d_sp)
+        lo = self._loai_aliases.get(lo, lo)
+        l1 = self._lop1_aliases.get(l1, l1.lower())
+        l2 = self._lop2_aliases.get(l2, l2.lower())
+
+        d_sp = d_sp if d_sp not in ['nan', 'None', '0', ''] else 'không_có'
+        lo = lo if lo not in ['nan', 'None', '0', ''] else 'không_có'
+        l1 = l1 if l1 not in ['nan', 'None', '0', ''] else 'không_có'
+        l2 = l2 if l2 not in ['nan', 'None', '0', ''] else 'không_có'
+
+        return d_sp, lo, l1, l2
 
     def trich_xuat_thong_tin(self, raw_text):
         raw_text = str(raw_text)
@@ -344,11 +381,18 @@ class DataCleaner:
             for i in range(5):
                 if i not in temp_cols.columns:
                     temp_cols[i] = 'không_có'
-                    
-            df_clean['Dòng SP'] = temp_cols[0]
-            df_clean['Loại'] = temp_cols[1]
-            df_clean['Lớp 1'] = temp_cols[2]
-            df_clean['Lớp 2'] = temp_cols[3]
+            
+            for idx in df_clean.index:
+                d_sp, loai, lop1, lop2 = self._normalize_label(
+                    temp_cols.at[idx, 0] if idx in temp_cols.index else 'không_có',
+                    temp_cols.at[idx, 1] if idx in temp_cols.index else 'không_có',
+                    temp_cols.at[idx, 2] if idx in temp_cols.index else 'không_có',
+                    temp_cols.at[idx, 3] if idx in temp_cols.index else 'không_có'
+                )
+                df_clean.at[idx, 'Dòng SP'] = d_sp
+                df_clean.at[idx, 'Loại'] = loai
+                df_clean.at[idx, 'Lớp 1'] = lop1
+                df_clean.at[idx, 'Lớp 2'] = lop2
             
             mask = (temp_cols[4] != 'không_có') & temp_cols[4].notna() & (temp_cols[4] != '')
             df_clean['Mã HS'] = np.where(mask, temp_cols[4], df_clean['Mã HS'])

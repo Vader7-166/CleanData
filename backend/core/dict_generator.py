@@ -265,6 +265,8 @@ class DictionaryGenerator:
             self.dong_sp_map = DONG_SP_MAP
         self.dong_sp_overrides = DONG_SP_OVERRIDES
 
+        self._load_label_standard()
+
     def clean_text(self, text):
         if pd.isna(text): return ''
         text = str(text).lower()
@@ -399,6 +401,40 @@ class DictionaryGenerator:
         if hits >= 2: return 'LK'
         if hs_code in self.hs_type_map: return self.hs_type_map[hs_code]
         return 'LK' if hits >= 1 else 'NC'
+
+    def _load_label_standard(self):
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'label_standard.json')
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                standard = json.load(f)
+            self._dong_sp_aliases = standard.get('dong_sp', {}).get('aliases', {})
+            self._loai_aliases = standard.get('loai', {}).get('aliases', {})
+            self._lop1_aliases = standard.get('lop1', {}).get('aliases', {})
+            self._lop2_aliases = standard.get('lop2', {}).get('aliases', {})
+        except Exception as e:
+            print(f"Warning: Could not load label_standard.json for dict gen: {e}")
+            self._dong_sp_aliases = {}
+            self._loai_aliases = {}
+            self._lop1_aliases = {}
+            self._lop2_aliases = {}
+
+    def _normalize_label(self, dong_sp, loai, lop1, lop2):
+        d_sp = str(dong_sp).strip()
+        lo = str(loai).strip()
+        l1 = str(lop1).strip()
+        l2 = str(lop2).strip()
+
+        d_sp = self._dong_sp_aliases.get(d_sp, d_sp)
+        lo = self._loai_aliases.get(lo, lo)
+        l1 = self._lop1_aliases.get(l1, l1.lower())
+        l2 = self._lop2_aliases.get(l2, l2.lower())
+
+        d_sp = d_sp if d_sp not in ['nan', 'None', '0', ''] else 'không_có'
+        lo = lo if lo not in ['nan', 'None', '0', ''] else 'không_có'
+        l1 = l1 if l1 not in ['nan', 'None', '0', ''] else 'không_có'
+        l2 = l2 if l2 not in ['nan', 'None', '0', ''] else 'không_có'
+
+        return d_sp, lo, l1, l2
 
     def label_clusters_llm(self, names_tfidf, data, batch_size=15, progress_callback=None):
         if not self.deepseek_api_key: return names_tfidf
@@ -624,9 +660,11 @@ class DictionaryGenerator:
             if -1 in c_data: names[-1] = f"[OUTLIER] {self.get_cluster_name_fallback(c_data[-1]['prods'], c_data[-1]['raw'], 3)}"
 
             for l in sorted(set(lbls)):
+                detected_type = self.detect_type(hs, names[l], c_data[l]['raw'][:5])
+                dong_norm, loai_norm, lop1_norm, lop2_norm = self._normalize_label(dong, detected_type, lop1, names[l])
                 all_rows.append({
-                    'Mã HS': hs, 'Dòng SP': dong, 'Loại': self.detect_type(hs, names[l], c_data[l]['raw'][:5]),
-                    'Lớp 1': lop1, 'Lớp 2': names[l], 'Keyword': '', 'Cluster_ID': int(l),
+                    'Mã HS': hs, 'Dòng SP': dong_norm, 'Loại': loai_norm,
+                    'Lớp 1': lop1_norm, 'Lớp 2': lop2_norm, 'Keyword': '', 'Cluster_ID': int(l),
                     'Số lượng SP': c_data[l]['count'], 'Mô tả mẫu': c_data[l]['sample']
                 })
 
@@ -815,6 +853,19 @@ class DictionaryGenerator:
 
         print(f"DEBUG: Keyword extraction matches: {cluster_id_matches} via Cluster_ID, {fallback_matches} via Fallback Regex.")
         tax_df['Keyword'] = res
+        
+        for idx, row in tax_df.iterrows():
+            d_sp, loai, lop1, lop2 = self._normalize_label(
+                row.get('Dòng SP', 'không_có'),
+                row.get('Loại', 'không_có'),
+                row.get('Lớp 1', 'không_có'),
+                row.get('Lớp 2', 'không_có')
+            )
+            tax_df.at[idx, 'Dòng SP'] = d_sp
+            tax_df.at[idx, 'Loại'] = loai
+            tax_df.at[idx, 'Lớp 1'] = lop1
+            tax_df.at[idx, 'Lớp 2'] = lop2
+        
         return tax_df.drop(columns=['Mã HS_Internal'], errors='ignore')
 
     def generate_dictionary_from_hq(self, raw_df, progress_callback=None):
