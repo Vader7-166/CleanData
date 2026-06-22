@@ -4,29 +4,121 @@ import json
 import pandas as pd
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import os
 import asyncio
 import time
+from transformers import AutoModel
+
+class PhoBertMultiTask(nn.Module):
+    def __init__(self, num_dong_sp, num_loai, num_lop1, num_lop2, model_name="vinai/phobert-base-v2"):
+        super(PhoBertMultiTask, self).__init__()
+        print(f"Initializing PhoBertMultiTask with base model: {model_name}")
+        self.phobert = AutoModel.from_pretrained(model_name)
+        self.dropout = nn.Dropout(0.1)
+        
+        hidden_size = self.phobert.config.hidden_size
+        
+        # 4 independent classification heads for multi-task learning
+        self.head_dong_sp = nn.Linear(hidden_size, num_dong_sp)
+        self.head_loai = nn.Linear(hidden_size, num_loai)
+        self.head_lop1 = nn.Linear(hidden_size, num_lop1)
+        self.head_lop2 = nn.Linear(hidden_size, num_lop2)
+
+    def forward(self, input_ids, attention_mask):
+        outputs = self.phobert(input_ids=input_ids, attention_mask=attention_mask)
+        # Use the CLS token representation (first token in PhoBERT)
+        cls_output = outputs.last_hidden_state[:, 0, :]
+        cls_output = self.dropout(cls_output)
+        
+        logits_dong_sp = self.head_dong_sp(cls_output)
+        logits_loai = self.head_loai(cls_output)
+        logits_lop1 = self.head_lop1(cls_output)
+        logits_lop2 = self.head_lop2(cls_output)
+        
+        return logits_dong_sp, logits_loai, logits_lop1, logits_lop2
 
 class DataCleaner:
     def __init__(self, model_path):
+        # Check for model redirection
+        model_v2_path = os.path.join(model_path, "model_v2")
+        if os.path.exists(os.path.join(model_v2_path, "config.json")):
+            print(f"Redirecting model path from {model_path} to {model_v2_path}")
+            model_path = model_v2_path
+
+        # Determine tokenizer path
+        tokenizer_path = "vinai/phobert-base-v2"
+        # Check if tokenizer files exist in model_path
+        if os.path.exists(os.path.join(model_path, "vocab.txt")):
+            tokenizer_path = model_path
+        # Check if they exist in parent directory of model_path
+        elif os.path.exists(os.path.join(os.path.dirname(model_path), "vocab.txt")):
+            tokenizer_path = os.path.dirname(model_path)
+
         self.model_path = model_path
         self.MAX_LENGTH = 64
-        print(f"Loading Tokenizer from {model_path}...")
+        print(f"Loading Tokenizer from {tokenizer_path}...")
         from transformers import AutoTokenizer
         try:
             # Use fast tokenizer for better performance on CPU
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=True)
         except Exception as e:
             print(f"Failed to load fast AutoTokenizer: {e}. Falling back to slow...")
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, use_fast=False)
         
-        print("Loading Model...")
-        from transformers import AutoModelForSequenceClassification
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        # Load config
+        config_file = os.path.join(model_path, "config.json")
+        is_multitask = False
+        config_data = {}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r", encoding="utf-8") as f:
+                    config_data = json.load(f)
+                if config_data.get("model_type") == "phobert_multitask":
+                    is_multitask = True
+            except Exception as e:
+                print(f"Error loading config.json: {e}")
+        
+        self.is_multitask = is_multitask
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
+        print(f"Device set to: {self.device}")
+
+        if is_multitask:
+            print("Loading Custom PhoBertMultiTask Model...")
+            num_dong_sp = config_data.get("num_dong_sp", 5)
+            num_loai = config_data.get("num_loai", 3)
+            num_lop1 = config_data.get("num_lop1", 36)
+            num_lop2 = config_data.get("num_lop2", 41)
+            
+            base_model_name = "vinai/phobert-base-v2"
+            self.model = PhoBertMultiTask(
+                num_dong_sp=num_dong_sp,
+                num_loai=num_loai,
+                num_lop1=num_lop1,
+                num_lop2=num_lop2,
+                model_name=base_model_name
+            )
+            
+            weights_path = os.path.join(model_path, "pytorch_model.bin")
+            print(f"Loading state dict from {weights_path}...")
+            state_dict = torch.load(weights_path, map_location="cpu")
+            self.model.load_state_dict(state_dict)
+            
+            # Load the 4 ASCII label encoders
+            self.encoders = {}
+            for col_key in ['dong_sp', 'loai', 'lop1', 'lop2']:
+                pkl_path = os.path.join(model_path, f"label_encoder_{col_key}.pkl")
+                with open(pkl_path, "rb") as f:
+                    self.encoders[col_key] = pickle.load(f)
+                print(f"Loaded encoder for {col_key} with {len(self.encoders[col_key].classes_)} classes.")
+        else:
+            print("Loading Flat Classifier Model...")
+            from transformers import AutoModelForSequenceClassification
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
+            with open(os.path.join(model_path, "label_encoder.pkl"), "rb") as f:
+                self.label_encoder = pickle.load(f)
+
         if self.device.type == "cpu":
             print("INFO: CUDA not available. Applying dynamic quantization for CPU optimization.")
             # Quantize the model to int8 to speed up CPU inference
@@ -41,10 +133,7 @@ class DataCleaner:
             torch.backends.cudnn.benchmark = True
             print("INFO: CUDA available, enabling cuDNN benchmark.")
 
-        with open(f"{model_path}/label_encoder.pkl", "rb") as f:
-            self.label_encoder = pickle.load(f)
-
-        self.THRESHOLD = 0.85
+        self.THRESHOLD = 0.60 if is_multitask else 0.85
         self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
         
         self._load_label_standard()
@@ -115,20 +204,59 @@ class DataCleaner:
         return pd.Series([hang, cong_suat, raw_text])
 
     def predict_with_threshold(self, text):
-        inputs = self.tokenizer(text, padding="max_length", truncation=True, max_length=128, return_tensors="pt")
+        if not self.is_multitask:
+            inputs = self.tokenizer(text, padding="max_length", truncation=True, max_length=128, return_tensors="pt")
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+
+            probabilities = F.softmax(outputs.logits, dim=-1)
+            max_prob, pred_id = torch.max(probabilities, dim=-1)
+
+            confidence = max_prob.item()
+            label = self.label_encoder.inverse_transform([pred_id.item()])[0]
+
+            status = "Tự động duyệt (AI)" if confidence >= self.THRESHOLD else "Cần kiểm tra"
+            return pd.Series([label, round(confidence * 100, 2), status])
+
+        # New multitask logic
+        inputs = self.tokenizer(text, padding="max_length", truncation=True, max_length=self.MAX_LENGTH, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
-            outputs = self.model(**inputs)
+            logits_dong, logits_loai, logits_lop1, logits_lop2 = self.model(
+                inputs['input_ids'], 
+                inputs['attention_mask']
+            )
 
-        probabilities = F.softmax(outputs.logits, dim=-1)
-        max_prob, pred_id = torch.max(probabilities, dim=-1)
+        p_dong = F.softmax(logits_dong, dim=-1)
+        p_loai = F.softmax(logits_loai, dim=-1)
+        p_lop1 = F.softmax(logits_lop1, dim=-1)
+        p_lop2 = F.softmax(logits_lop2, dim=-1)
 
-        confidence = max_prob.item()
-        label = self.label_encoder.inverse_transform([pred_id.item()])[0]
+        prob_dong, pred_dong = torch.max(p_dong, dim=-1)
+        prob_loai, pred_loai = torch.max(p_loai, dim=-1)
+        prob_lop1, pred_lop1 = torch.max(p_lop1, dim=-1)
+        prob_lop2, pred_lop2 = torch.max(p_lop2, dim=-1)
 
-        status = "Tự động duyệt (AI)" if confidence >= self.THRESHOLD else "Cần kiểm tra"
-        return pd.Series([label, round(confidence * 100, 2), status])
+        val_dong = prob_dong.item()
+        val_loai = prob_loai.item()
+        val_lop1 = prob_lop1.item()
+        val_lop2 = prob_lop2.item()
+
+        # Joint confidence score (product of probabilities)
+        joint_confidence = val_dong * val_loai * val_lop1 * val_lop2
+
+        label_dong = self.encoders['dong_sp'].inverse_transform([pred_dong.item()])[0]
+        label_loai = self.encoders['loai'].inverse_transform([pred_loai.item()])[0]
+        label_lop1 = self.encoders['lop1'].inverse_transform([pred_lop1.item()])[0]
+        label_lop2 = self.encoders['lop2'].inverse_transform([pred_lop2.item()])[0]
+
+        label = f"{label_dong} | {label_loai} | {label_lop1} | {label_lop2}"
+        status = "Tự động duyệt (AI)" if joint_confidence >= self.THRESHOLD else "Cần kiểm tra"
+
+        return pd.Series([label, round(joint_confidence * 100, 2), status])
 
     def predict_dictionary(self, text):
         text_lower = self.clean_text_for_dict(text)
@@ -182,7 +310,6 @@ class DataCleaner:
         for i in range(0, len(texts), batch_size):
             batch_texts = texts[i:i+batch_size]
             
-            # Use fast tokenizer and reduced max_length
             inputs = self.tokenizer(
                 batch_texts, 
                 padding=True, 
@@ -193,25 +320,67 @@ class DataCleaner:
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                # Autocast only for GPU; can cause issues with quantized models on CPU
                 if self.device.type == "cuda":
-                    with torch.autocast('cuda'):
-                        outputs = self.model(**inputs)
+                    with torch.amp.autocast('cuda'):
+                        if self.is_multitask:
+                            logits_dong, logits_loai, logits_lop1, logits_lop2 = self.model(
+                                inputs['input_ids'], 
+                                inputs['attention_mask']
+                            )
+                        else:
+                            outputs = self.model(**inputs)
                 else:
-                    outputs = self.model(**inputs)
+                    if self.is_multitask:
+                        logits_dong, logits_loai, logits_lop1, logits_lop2 = self.model(
+                            inputs['input_ids'], 
+                            inputs['attention_mask']
+                        )
+                    else:
+                        outputs = self.model(**inputs)
 
-            probabilities = F.softmax(outputs.logits, dim=-1)
-            max_probs, pred_ids = torch.max(probabilities, dim=-1)
+            if self.is_multitask:
+                p_dong = F.softmax(logits_dong, dim=-1)
+                p_loai = F.softmax(logits_loai, dim=-1)
+                p_lop1 = F.softmax(logits_lop1, dim=-1)
+                p_lop2 = F.softmax(logits_lop2, dim=-1)
 
-            max_probs_numpy = max_probs.cpu().numpy()
-            pred_ids_numpy = pred_ids.cpu().numpy()
-            
-            # Vectorized inverse transform
-            labels = self.label_encoder.inverse_transform(pred_ids_numpy)
+                prob_dong, pred_dong = torch.max(p_dong, dim=-1)
+                prob_loai, pred_loai = torch.max(p_loai, dim=-1)
+                prob_lop1, pred_lop1 = torch.max(p_lop1, dim=-1)
+                prob_lop2, pred_lop2 = torch.max(p_lop2, dim=-1)
 
-            for prob, label in zip(max_probs_numpy, labels):
-                status = "Tự động duyệt (AI)" if prob >= self.THRESHOLD else "Cần kiểm tra"
-                predictions.append((label, round(float(prob) * 100, 2), status))
+                p_dong_np = prob_dong.cpu().numpy()
+                p_loai_np = prob_loai.cpu().numpy()
+                p_lop1_np = prob_lop1.cpu().numpy()
+                p_lop2_np = prob_lop2.cpu().numpy()
+
+                id_dong_np = pred_dong.cpu().numpy()
+                id_loai_np = pred_loai.cpu().numpy()
+                id_lop1_np = pred_lop1.cpu().numpy()
+                id_lop2_np = pred_lop2.cpu().numpy()
+
+                lbl_dong = self.encoders['dong_sp'].inverse_transform(id_dong_np)
+                lbl_loai = self.encoders['loai'].inverse_transform(id_loai_np)
+                lbl_lop1 = self.encoders['lop1'].inverse_transform(id_lop1_np)
+                lbl_lop2 = self.encoders['lop2'].inverse_transform(id_lop2_np)
+
+                for idx in range(len(batch_texts)):
+                    conf = float(p_dong_np[idx] * p_loai_np[idx] * p_lop1_np[idx] * p_lop2_np[idx])
+                    label = f"{lbl_dong[idx]} | {lbl_loai[idx]} | {lbl_lop1[idx]} | {lbl_lop2[idx]}"
+                    status = "Tự động duyệt (AI)" if conf >= self.THRESHOLD else "Cần kiểm tra"
+                    predictions.append((label, round(conf * 100, 2), status))
+            else:
+                probabilities = F.softmax(outputs.logits, dim=-1)
+                max_probs, pred_ids = torch.max(probabilities, dim=-1)
+
+                max_probs_numpy = max_probs.cpu().numpy()
+                pred_ids_numpy = pred_ids.cpu().numpy()
+                
+                labels = self.label_encoder.inverse_transform(pred_ids_numpy)
+
+                for prob, label in zip(max_probs_numpy, labels):
+                    status = "Tự động duyệt (AI)" if prob >= self.THRESHOLD else "Cần kiểm tra"
+                    predictions.append((label, round(float(prob) * 100, 2), status))
         
         total_time = time.time() - start_total
         print(f"INFO: AI Batch Inference of {len(texts)} rows took {total_time:.2f}s ({len(texts)/total_time:.2f} rows/s)")

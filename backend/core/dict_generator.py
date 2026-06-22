@@ -90,6 +90,9 @@ LABEL_STOPWORDS = VI_STOPWORDS | {
     'bền', 'đẹp', 'giá', 'tốt', 'rẻ', 'bán', 'chạy', 'nhất',
     'thị', 'trường', 'năm', 'sản', 'xuất', 'bảo', 'hành',
     'thay', 'thế', 'tương', 'đương', 'chính', 'hãng',
+    'depo', 'tail', 'hino', 'inster', 'foton', 'sân', 'golf', 'chỗ',
+    'caterpillar', 'hyster', 'mindray', 'atellica', 'skyline',
+    'coulter', 'bosch', 'masuma', 'sân golf',
 }
 
 # HS_TAXONOMY: Maps HS code -> Lớp 1 business category
@@ -924,6 +927,21 @@ class DictionaryGenerator:
         
         for col in group_cols + ([lop2_col] if lop2_col else []):
             raw_df[col] = raw_df[col].fillna('0').astype(str).str.strip()
+            
+        # Normalize category columns using config rules before grouping
+        def norm_row(r):
+            d_sp = r['Dòng SP']
+            lo = r['Loại']
+            l1 = r['Lớp 1']
+            l2 = r['Lớp 2'] if lop2_col else '0'
+            return self._normalize_label(d_sp, lo, l1, l2)
+            
+        norms = raw_df.apply(norm_row, axis=1)
+        raw_df['Dòng SP'] = [n[0] for n in norms]
+        raw_df['Loại'] = [n[1] for n in norms]
+        raw_df['Lớp 1'] = [n[2] for n in norms]
+        if lop2_col:
+            raw_df['Lớp 2'] = [n[3] for n in norms]
             
         if progress_callback:
             progress_callback(2, 3, "Grouping and extracting keywords...")

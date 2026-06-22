@@ -10,6 +10,7 @@ services:
       - ./working:/working
       - ./backend:/app/backend
       - ./dataset:/app/dataset
+      - ./config:/app/config
     environment:
       - MODEL_PATH=/working
       - DATABASE_URL=postgresql://user:password@db:5432/cleandata
