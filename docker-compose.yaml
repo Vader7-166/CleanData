@@ -15,11 +15,14 @@ services:
       - MODEL_PATH=/working
       - DATABASE_URL=postgresql://user:password@db:5432/cleandata
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_REPO_ID=duyhung753951/clean-data_vinai_phobert-base-v2
     depends_on:
       - db
-    # Cài đặt nóng các thư viện missing và khởi động server
+    # Cài đặt nóng các thư viện missing, tải model và khởi động server
     command: >
       sh -c "pip install --no-cache-dir scikit-learn psycopg2-binary pyahocorasick pyvi requests python-dotenv python-multipart openpyxl && 
+             python backend/scripts/download_model.py && 
              uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
 
   db:
