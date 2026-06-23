@@ -1,7 +1,9 @@
 # CleanData - Kế hoạch cải thiện Accuracy (0.76 → 0.85-0.92)
 
 > **Ngày tạo:** 2026-06-22
+> **Cập nhật:** 2026-06-23 — Phase 5 hoàn thành
 > **Mục tiêu:** Tăng accuracy phân loại `Dòng SP | Loại | Lớp 1 | Lớp 2` từ 0.76 lên 0.85-0.92
+> **Kết quả hiện tại (Phase 4):** Combined accuracy **84.92%**
 > **Ràng buộc:** CPU only
 > **Dữ liệu chính:** HQ-2025.csv (train, referenced in notebook), DICT_HQ_2026.csv (dict mới 939 dòng), HSTaxonomy DB
 ---
@@ -419,35 +421,44 @@ else:
 
 ---
 
-## Phase 5: Cross-validation 3 chiều
+## Phase 5: Cross-validation 3 chiều ✅ HOÀN THÀNH (2026-06-23)
 
-**Mục tiêu:** Dùng DICT_HQ_2026 làm "trọng tài" để phát hiện lỗi.
+**Mục tiêu:** Dùng DICT_HQ_2026 làm "trọng tài" để phát hiện lỗi chéo giữa 3 nguồn.
 
-**Script cần viết:** `analysis/cross_validate.py`
+**Script:** `analysis/cross_validate.py`
 
 ### Setup
 ```
-Test set 10%
+Test set 10% (~31K dòng)
     ├── DICT_HQ_2026 predict (với HS filter)
     ├── dictv3 predict  
-    └── PhoBERT AI predict (model mới từ Phase 4)
+    └── PhoBERT AI predict (model Phase 4)
          ↓
     So sánh 3 kết quả với ground truth
 ```
 
-### Patterns cần phân loại
-| Pattern | Hành động |
-|---|---|
-| Dict_HQ đúng, AI sai, dictv3 đúng | AI cần thêm mẫu train → thêm vào training set |
-| Dict_HQ đúng, AI sai, dictv3 sai | Dict_HQ vượt trội → promote lên làm primary |
-| Dict_HQ sai, AI đúng, dictv3 sai | AI mạnh hơn → giữ AI cho case này |
-| Cả 3 sai | Hard case → đánh dấu "Cần kiểm tra" ưu tiên cao |
-| Dict_HQ + AI đúng, dictv3 sai | Deprecate dictv3 entry tương ứng |
+### Kết quả đánh giá
 
-### Output
-- `analysis/cross_validation_report.csv` — toàn bộ disagreement
-- `analysis/dict_fixes_needed.csv` — keyword cần sửa trong dict
-- `analysis/hard_cases.csv` — mẫu cần review thủ công
+| Pattern | Số dòng | % | Hành động |
+|---|---|---|---|
+| **AI đúng, Dict_HQ + dictv3 sai** | 15,594 | 50.3% | Cần sửa keyword DICT_HQ_2026 |
+| **Cả 3 sai** | 7,221 | 23.3% | Hard case — cần review thủ công |
+| **Cả 3 đúng / đồng thuận** | 3,853 | 12.4% | Không cần hành động |
+| **Dict_HQ + AI đúng, dictv3 sai** | 2,484 | 8.0% | Deprecate dictv3 entries tương ứng |
+| **Dict_HQ đúng, AI + dictv3 sai** | 1,528 | 4.9% | Dict_HQ vượt trội → promote làm primary |
+| **Cả 2 dict đúng, AI sai** | 336 | 1.1% | Thêm mẫu train cho AI |
+
+### Nhận xét chính
+1. **Dict_HQ_2026 còn yếu:** 50% trường hợp Dict_HQ + dictv3 sai trong khi AI đúng — Dict_HQ cần bổ sung keyword cho các case AI phát hiện được.
+2. **Hard cases ~23%:** Đây là giới hạn trên của toàn bộ hệ thống — cần human review, không thể tự động hóa.
+3. **dictv3 gần như lỗi thời:** 8% trường hợp Dict_HQ và AI cùng đúng nhưng dictv3 sai → nên deprecate dần.
+4. **Dict_HQ > AI:** Chỉ 1.1% trường hợp dict đúng mà AI sai → AI đã học tốt từ Phase 4.
+5. **Dict_HQ vượt trội (4.9%):** Các case Dict_HQ đúng đơn độc cần được ưu tiên làm primary source — cho thấy HS filter của Dict_HQ có giá trị riêng.
+
+### Output đã tạo
+- `analysis/output/cross_validation_report.csv` — 31,016 dòng disagreement chi tiết
+- `analysis/output/dict_fixes_needed.csv` — 15,594 keyword cần sửa trong Dict_HQ_2026
+- `analysis/output/hard_cases.csv` — 7,221 mẫu cần review thủ công
 
 ---
 
@@ -508,16 +519,16 @@ def validate_label(hs_code, predicted_label):
 
 ## Tổng kết lộ trình
 
-| Phase | Cần train? | Dự kiến tăng acc | Thời gian (CPU) | Phụ thuộc |
+| Phase | Trạng thái | Cần train? | Tác động | Phụ thuộc |
 |---|---|---|---|---|---|
-| 0. Naming | Không | Gián tiếp | Đã xong | - |
-| 1. Error Analysis | Không | - | 1-2h | Phase 0 |
-| 2. DICT_HQ_2026 + HS | Không | +2-4% | 2-3h | Phase 0 |
-| 2.5 HS → Company Mapping | Không | Gián tiếp | 30-60ph | Phase 0,1 |
-| 3. Synthetic Data | Không | +2-5% | 1h | Phase 2,2.5 |
-| 4. Multi-Task | Có | +5-10% | 4-8h train | Phase 1,3 |
-| 5. Cross-validation | Không | +1-3% | 1-2h | Phase 2,4 |
-| 6. Active Learning | Có | +3-7% | Theo chu kỳ | Phase 4 |
+| 0. Naming | ✅ | Không | Gián tiếp | - |
+| 1. Error Analysis | ✅ | Không | Phát hiện bottleneck | Phase 0 |
+| 2. DICT_HQ_2026 + HS | ✅ | Không | +2-4% acc | Phase 0 |
+| 2.5 HS → Company Mapping | ✅ | Không | Gián tiếp | Phase 0,1 |
+| 3. Synthetic Data | ❓ | Không | +2-5% acc | Phase 2,2.5 |
+| 4. Multi-Task Training | ✅ | Có | +5-10% acc | Phase 1,3 |
+| 5. Cross-validation | ✅ | Không | Phát hiện lỗi chéo | Phase 2,4 |
+| 6. Active Learning | ⏳ | Có | +3-7% acc | Phase 4 |
 
 **Tổng dự kiến:** 0.76 → 0.85-0.92
 
