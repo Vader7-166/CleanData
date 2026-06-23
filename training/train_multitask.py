@@ -4,6 +4,7 @@ import sys
 import json
 import math
 import pickle
+import argparse
 import numpy as np
 import pandas as pd
 import torch
@@ -34,7 +35,31 @@ seed_everything(42)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET_PATH = os.path.join(BASE_DIR, "dataset", "train_augmented.csv")
 MODEL_OUT_DIR = os.path.join(BASE_DIR, "working", "model_v2")
-os.makedirs(MODEL_OUT_DIR, exist_ok=True)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train PhoBERT multi-task model")
+    parser.add_argument("--dataset", type=str, default=DATASET_PATH,
+                        help="Path to base training dataset (CSV with text, Dòng SP, Loại, Lớp 1, Lớp 2, weight)")
+    parser.add_argument("--phase6-data", type=str, default=None,
+                        help="Path to Phase 6 augmented data CSV to merge and continue training")
+    parser.add_argument("--resume-from", type=str, default=None,
+                        help="Path to existing model checkpoint (pytorch_model.bin) to resume training")
+    parser.add_argument("--output-dir", type=str, default=MODEL_OUT_DIR,
+                        help="Directory to save model checkpoints")
+    parser.add_argument("--epochs", type=int, default=5,
+                        help="Number of training epochs")
+    parser.add_argument("--lr", type=float, default=2e-5,
+                        help="Learning rate")
+    parser.add_argument("--batch-size", type=int, default=4,
+                        help="Per-device batch size")
+    parser.add_argument("--no-fp16", action="store_true",
+                        help="Disable mixed precision training")
+    return parser.parse_args()
+
+
+# ===========================================================================
+# MODEL ARCHITECTURE
 
 # ===========================================================================
 # MODEL ARCHITECTURE
@@ -128,35 +153,67 @@ class MultiTaskCollator:
 # ===========================================================================
 # HUẤN LUYỆN CHÍNH
 # ===========================================================================
-def train():
+def train(args):
+    dataset_path = args.dataset
+    output_dir = args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # Auto detect VRAM and configure parameters for RTX 2070 Super (8GB)
-    batch_size = 4
+    batch_size = args.batch_size
     grad_accum_steps = 8
-    use_fp16 = True
+    use_fp16 = not args.no_fp16 and torch.cuda.is_available()
     use_grad_ckpt = True
 
     if torch.cuda.is_available():
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
         print(f"Detected GPU VRAM: {vram_gb:.2f} GB")
-        if vram_gb <= 8.5:
-            print("Configured for local GPU (VRAM <= 8GB). Enabling memory optimization.")
-        else:
+        if vram_gb > 8.5:
             print("Large VRAM GPU detected. Adjusting batch sizes.")
             batch_size = 16
             grad_accum_steps = 2
+        else:
+            print("Configured for local GPU (VRAM <= 8GB). Enabling memory optimization.")
     else:
         print("No GPU detected! Running on CPU (slow fallback).")
         use_fp16 = False
         use_grad_ckpt = False
 
     # 1.2 Load and encode dataset
-    print(f"Loading augmented dataset from {DATASET_PATH}...")
-    df = pd.read_csv(DATASET_PATH)
+    print(f"Loading augmented dataset from {dataset_path}...")
+    df = pd.read_csv(dataset_path)
     df = df.fillna('không_có')
     print(f"Loaded dataset shape: {df.shape}")
+
+    # Merge Phase 6 augmented data if provided
+    if args.phase6_data:
+        if not os.path.exists(args.phase6_data):
+            print(f"WARNING: Phase 6 data not found at {args.phase6_data}, skipping.")
+        else:
+            print(f"Merging Phase 6 training data from {args.phase6_data}...")
+            df_phase6 = pd.read_csv(args.phase6_data)
+            df_phase6 = df_phase6.fillna('không_có')
+            print(f"  Phase 6 data shape: {df_phase6.shape}")
+
+            required_cols = ['text', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'weight']
+            available = [c for c in required_cols if c in df_phase6.columns]
+            missing = [c for c in required_cols if c not in df_phase6.columns]
+            if missing:
+                print(f"  WARNING: Missing columns in Phase 6 data: {missing}. Filling with 'không_có'.")
+                for c in missing:
+                    df_phase6[c] = 'không_có'
+
+            has_hs = 'HS_Code' in df_phase6.columns
+            if has_hs:
+                print(f"  Phase 6 samples by HS code: {df_phase6['HS_Code'].value_counts().to_dict()}")
+
+            before = len(df)
+            df = pd.concat([df, df_phase6[required_cols]], ignore_index=True)
+            df = df.drop_duplicates(subset=['text'], keep='first')
+            after = len(df)
+            print(f"  Merged: {before} + {len(df_phase6)} -> {after} (removed {before + len(df_phase6) - after} duplicates)")
 
     label_cols = ['Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2']
     encoders = {}
@@ -182,7 +239,7 @@ def train():
         encoded_labels[col_key] = le.transform(df[col])
         
         # Save LabelEncoder to pickle
-        pkl_path = os.path.join(MODEL_OUT_DIR, f"label_encoder_{col_key}.pkl")
+        pkl_path = os.path.join(output_dir, f"label_encoder_{col_key}.pkl")
         with open(pkl_path, 'wb') as f:
             pickle.dump(le, f)
         print(f"Saved {col} encoder ({len(le.classes_)} classes) to {pkl_path}")
@@ -215,7 +272,18 @@ def train():
         num_lop1=len(encoders['lop1'].classes_),
         num_lop2=len(encoders['lop2'].classes_)
     )
-    
+
+    # Load existing checkpoint if --resume-from is provided
+    if args.resume_from:
+        resume_path = args.resume_from
+        if not os.path.exists(resume_path):
+            print(f"WARNING: Checkpoint not found at {resume_path}. Starting from scratch.")
+        else:
+            print(f"Resuming from checkpoint: {resume_path}")
+            state_dict = torch.load(resume_path, map_location="cpu")
+            model.load_state_dict(state_dict, strict=False)
+            print(f"  Loaded checkpoint (strict=False, ignoring mismatched heads if any).")
+
     if use_grad_ckpt:
         print("Enabling gradient checkpointing for PhoBERT...")
         model.phobert.gradient_checkpointing_enable()
@@ -227,8 +295,8 @@ def train():
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1, reduction='none')
 
     # Optimization setup
-    epochs = 5
-    lr = 2e-5
+    epochs = args.epochs
+    lr = args.lr
     weight_decay = 0.01
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -370,10 +438,10 @@ def train():
             best_val_loss = avg_val_loss
             epochs_no_improve = 0
             # Save the best model
-            model_save_path = os.path.join(MODEL_OUT_DIR, "pytorch_model.bin")
+            model_save_path = os.path.join(output_dir, "pytorch_model.bin")
             torch.save(model.state_dict(), model_save_path)
             # Save configuration
-            config_save_path = os.path.join(MODEL_OUT_DIR, "config.json")
+            config_save_path = os.path.join(output_dir, "config.json")
             with open(config_save_path, 'w', encoding='utf-8') as f:
                 json.dump({
                     "model_type": "phobert_multitask",
@@ -393,4 +461,5 @@ def train():
     print("Training finished successfully!")
 
 if __name__ == "__main__":
-    train()
+    args = parse_args()
+    train(args)

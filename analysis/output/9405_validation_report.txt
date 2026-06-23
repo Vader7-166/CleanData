@@ -1,108 +1,124 @@
 ======================================================================
-BÁO CÁO KIỂM CHỨNG PIPELINE DICT -> MODEL
+BAO CAO KIEM CHUNG PIPELINE DICT -> MODEL
 File: 9405-XK-Th12.2025.xlsx
-Thời gian: 2026-06-22 23:29:44
+Thoi gian: 2026-06-23 22:07:12
 ======================================================================
 
-1. TỔNG QUAN
-   Tổng số dòng: 30,273
-   Tổng giá trị (USD): 285,598,757.54
-   Tổng số lượng: 57,905,390
-   Số dòng có Mã HS: 30,273 (100.0%)
-   Số Mã HS duy nhất: 44
+1. TONG QUAN
+   Tong so dong: 30,273
+   Tong gia tri (USD): 285,598,757.54
+   Tong so luong: 57,905,390
+   So dong co Ma HS: 30,273 (100.0%)
+   So Ma HS duy nhat: 44
 
-2. PHÂN PHỐI NGUỒN XỬ LÝ
-   Dict match:      4,280 ( 14.1%)
-   AI fallback:    25,993 ( 85.9%)
-   Không xử lý:         0 (  0.0%)
+2. PHAN PHOI NGUON XU LY
+   Dict (AC):          4,280 ( 14.1%)
+   Dict (Semantic):   22,422 ( 74.1%)
+   AI:                     0 (  0.0%)
+   Khong xu ly:        3,571 ( 11.8%)
    ---
-   Tự động duyệt:  18,205 ( 60.1%)
-   Cần kiểm tra:   12,068 ( 39.9%)
+   Tu dong duyet:     26,702 ( 88.2%)
+   Can kiem tra:       3,571 ( 11.8%)
 
-3. PHÂN PHỐI DÒNG SP
-   SP LED                   : 29,932 ( 98.9%)
-   SP truyền thống          :    323 (  1.1%)
-   đèn uv                   :     14 (  0.0%)
-   SP khác                  :      4 (  0.0%)
+3. PHAN PHOI DONG SP
+   SP LED                   : 25,025 ( 82.7%)
+   không_có                 :  3,571 ( 11.8%)
+   SP truyền thống          :  1,602 (  5.3%)
+   SP khác                  :     39 (  0.1%)
+   đèn uv                   :     36 (  0.1%)
 
-4. PHÂN PHỐI LOẠI
-   NC        : 24,984 ( 82.5%)
-   LK        :  5,288 ( 17.5%)
-   không_có  :      1 (  0.0%)
+4. PHAN PHOI LOAI
+   NC        : 19,936 ( 65.9%)
+   LK        :  6,731 ( 22.2%)
+   không_có  :  3,606 ( 11.9%)
 
-5. TOP 15 LỚP 1
-   led khác                      :  9,986 ( 33.0%)
-   không_có                      :  7,314 ( 24.2%)
-   led trang trí                 :  6,489 ( 21.4%)
-   led cảnh quan                 :  1,370 (  4.5%)
-   led gắn tường                 :    977 (  3.2%)
-   led ốp trần                   :    835 (  2.8%)
-   flood                         :    596 (  2.0%)
-   led downlight                 :    507 (  1.7%)
-   highbay                       :    476 (  1.6%)
-   led khẩn cấp                  :    473 (  1.6%)
-   led bulb                      :    355 (  1.2%)
-   led panel lớn                 :    194 (  0.6%)
-   led tube                      :    120 (  0.4%)
-   led dây                       :    101 (  0.3%)
-   led panel                     :     90 (  0.3%)
+5. TOP 15 LOP 1
+   không_có                      :  6,977 ( 23.0%)
+   led trang trí                 :  6,468 ( 21.4%)
+   led khác                      :  2,455 (  8.1%)
+   led chống cháy/ ẩm            :  1,791 (  5.9%)
+   highbay                       :  1,626 (  5.4%)
+   led cảnh quan                 :  1,560 (  5.2%)
+   flood                         :  1,292 (  4.3%)
+   led bán nguyệt                :  1,171 (  3.9%)
+   led gắn tường                 :  1,171 (  3.9%)
+   led khẩn cấp                  :  1,118 (  3.7%)
+   tracklight                    :    955 (  3.2%)
+   led ốp trần                   :    653 (  2.2%)
+   led downlight                 :    637 (  2.1%)
+   led lon                       :    524 (  1.7%)
+   led bulb                      :    301 (  1.0%)
 
-6. TOP 15 LỚP 2
-   không_có                      : 29,554 ( 97.6%)
-   led solar                     :    277 (  0.9%)
+6. TOP 15 LOP 2
+   không_có                      : 24,288 ( 80.2%)
+   led solar                     :  2,592 (  8.6%)
+   đèn báo hiệu                  :    887 (  2.9%)
+   đèn bàn                       :    614 (  2.0%)
+   đèn sàn                       :    502 (  1.7%)
+   bảng hiệu led                 :    473 (  1.6%)
    đèn lồng                      :    226 (  0.7%)
-   đèn chùm                      :     79 (  0.3%)
-   đèn báo hiệu                  :     47 (  0.2%)
-   đèn bàn                       :     26 (  0.1%)
-   đèn ngủ                       :     26 (  0.1%)
-   nam châm                      :     18 (  0.1%)
-   đèn trần                      :      7 (  0.0%)
-   đèn treo thả                  :      5 (  0.0%)
+   đèn chùm                      :    200 (  0.7%)
+   đèn ngủ                       :    183 (  0.6%)
+   đèn thờ                       :    136 (  0.4%)
+   đèn treo thả                  :     73 (  0.2%)
+   led module                    :     63 (  0.2%)
+   nam châm                      :     26 (  0.1%)
+   đèn trần                      :      4 (  0.0%)
    đèn tường                     :      3 (  0.0%)
-   đèn sàn                       :      3 (  0.0%)
-   đèn thờ                       :      2 (  0.0%)
 
-7. NGUỒN vs TRẠNG THÁI
-   ai           -> Cần kiểm tra                       : 12,068
-   ai           -> Tự động duyệt (AI)                 : 13,925
-   dict         -> Tự động duyệt (Từ điển - Điểm: 10) :    162
-   dict         -> Tự động duyệt (Từ điển - Điểm: 11) :     64
-   dict         -> Tự động duyệt (Từ điển - Điểm: 13) :      7
-   dict         -> Tự động duyệt (Từ điển - Điểm: 16) :      1
-   dict         -> Tự động duyệt (Từ điển - Điểm: 18) :     23
-   dict         -> Tự động duyệt (Từ điển - Điểm: 19) :     16
-   dict         -> Tự động duyệt (Từ điển - Điểm: 22) :      2
-   dict         -> Tự động duyệt (Từ điển - Điểm: 25) :  1,273
-   dict         -> Tự động duyệt (Từ điển - Điểm: 26) :      1
-   dict         -> Tự động duyệt (Từ điển - Điểm: 27) :      5
-   dict         -> Tự động duyệt (Từ điển - Điểm: 34) :      2
-   dict         -> Tự động duyệt (Từ điển - Điểm: 35) :      1
-   dict         -> Tự động duyệt (Từ điển - Điểm: 50) :      1
-   dict         -> Tự động duyệt (Từ điển - Điểm: 8)  :      1
-   dict         -> Tự động duyệt (Từ điển - Điểm: 9)  :  2,721
+7. NGUON vs TRANG THAI
+   dict            -> Tự động duyệt (Từ điển - Điểm: 10) :    162
+   dict            -> Tự động duyệt (Từ điển - Điểm: 11) :     64
+   dict            -> Tự động duyệt (Từ điển - Điểm: 13) :      7
+   dict            -> Tự động duyệt (Từ điển - Điểm: 16) :      1
+   dict            -> Tự động duyệt (Từ điển - Điểm: 18) :     23
+   dict            -> Tự động duyệt (Từ điển - Điểm: 19) :     16
+   dict            -> Tự động duyệt (Từ điển - Điểm: 22) :      2
+   dict            -> Tự động duyệt (Từ điển - Điểm: 25) :  1,272
+   dict            -> Tự động duyệt (Từ điển - Điểm: 26) :      1
+   dict            -> Tự động duyệt (Từ điển - Điểm: 27) :      5
+   dict            -> Tự động duyệt (Từ điển - Điểm: 34) :      2
+   dict            -> Tự động duyệt (Từ điển - Điểm: 35) :      1
+   dict            -> Tự động duyệt (Từ điển - Điểm: 50) :      1
+   dict            -> Tự động duyệt (Từ điển - Điểm: 8)  :      1
+   dict            -> Tự động duyệt (Từ điển - Điểm: 9)  :  2,722
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.55):    610
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.56):  1,295
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.57):  1,491
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.58):  1,294
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.59):  2,102
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.60):  1,963
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.61):  1,557
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.62):  1,753
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.63):  1,552
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.64):  1,730
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.65):  1,522
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.66):  1,342
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.67):    959
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.68):    710
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.69):    539
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.70):    336
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.71):    238
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.72):    185
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.73):    200
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.74):    160
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.75):    171
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.76):     98
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.77):    409
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.78):    142
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.79):     63
+   dict_semantic   -> Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.81):      1
+   none            -> Can kiem tra                       :  3,571
 
-8. KIỂM TRA VỚI HS COMPANY MAPPING
-   Số dòng có HS trong mapping: 30,273
-   Dòng SP match (top+alt): 30,226 (99.8%)
-   Dòng SP mismatch:         47 (0.2%)
-   Loại match (top):         28,444 (94.0%)
-   Lớp 1 match (top):        14,150 (46.7%)
-   Lớp 2 match (top):        28,175 (93.1%)
+8. SEMANTIC FALLBACK IMPACT
+   Dict coverage increased by 22422 rows (74.1%)
+   vs previous pipeline would have fallen back to AI
 
-   Top 5 Dòng SP expected có nhiều mismatch nhất:
-     SP LED: 338 dòng
-     SP truyền thống: 39 dòng
-
-9. CROSS-REFERENCE VS HQ 2025
-   Số HS code chung: 44
-   Top-1 Dòng SP agreement: 40/44 (90.9%)
-   Top-1 Loại agreement:    42/44 (95.5%)
-   Top-1 Lớp 1 agreement:   22/44 (50.0%)
-
-   HS codes có phân phối Dòng SP khác HQ 2025 (n>=5):
-     94055019: overlap=17%, HQ=SP truyền thống, Pred=SP LED, n_HQ=218, n_pred=29
-     94051992: overlap=41%, HQ=SP truyền thống, Pred=SP LED, n_HQ=392, n_pred=11
+9. ENHANCEMENT OUTPUTS
+   dict_enhancement_proposals.csv: not generated (no applicable cases)
+   hard_cases.csv: not generated (no applicable cases)
+   train_phase6_augmented.csv: not generated (no applicable cases)
 
 ======================================================================
-HẾT BÁO CÁO
+HET BAO CAO
 ======================================================================

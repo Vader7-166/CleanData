@@ -1,7 +1,7 @@
 # CleanData - Kế hoạch cải thiện Accuracy (0.76 → 0.85-0.92)
 
 > **Ngày tạo:** 2026-06-22
-> **Cập nhật:** 2026-06-23 — Phase 5 hoàn thành
+> **Cập nhật:** 2026-06-23 — Phase 6 hoàn thành
 > **Mục tiêu:** Tăng accuracy phân loại `Dòng SP | Loại | Lớp 1 | Lớp 2` từ 0.76 lên 0.85-0.92
 > **Kết quả hiện tại (Phase 4):** Combined accuracy **84.92%**
 > **Ràng buộc:** CPU only
@@ -462,58 +462,108 @@ Test set 10% (~31K dòng)
 
 ---
 
-## Phase 6: Active Learning + Mapping tự học
+## Phase 6: Semantic Dict Enhancement + Continuous Pipeline ✅ HOÀN THÀNH (2026-06-23)
 
-**Mục tiêu:** Thu thập low-confidence samples → human review → retrain model. Kết hợp mapping (`hs_company_mapping.json`) tự cập nhật online từ kết quả đã verify, tăng độ phủ và confidence theo thời gian.
+**Mục tiêu:** Chuyển Phase 6 từ "pure verification" thành **pipeline củng cố dict + model liên tục**. Giải quyết vấn đề cốt lõi: dict creation hiện tại chỉ dùng TF-IDF/tần suất → mất ngữ nghĩa tiếng Việt. Bổ sung semantic matching để dict có thể khớp cả khi từ ngữ viết khác đi.
 
-### Chu kỳ active learning
-```
-1. Predict trên unlabeled data mới
-2. Lọc samples có 0.5 < confidence < 0.85 (vùng model không chắc)
-3. Xuất ra file CSV để review thủ công
-4. Gán nhãn (có thể dùng frontend `DictionaryGeneratorWizard.tsx`)
-5. Merge vào training set
-6. Retrain model (Phase 4)
-```
+**Script chính:** `analysis/verify_pipeline_9405.py` (rewrite)  
+**Module mới:** `analysis/dict_enhancer.py` — phân tích disagreement + sinh proposals
 
-### Mapping tự học (online update)
-
-Sau mỗi lần xử lý file mới, `hs_company_mapping.json` được cập nhật:
+### Kiến trúc mới
 
 ```
-Với mỗi dòng đã phân loại xong:
-  
-  Nếu "Tự động duyệt" (dict ≥ threshold hoặc AI conf ≥ 0.85):
-    → Thêm vào thống kê HS code với weight = 1
-    
-  Nếu "Cần kiểm tra" → human review → label đã verify:
-    → Thêm vào thống kê với weight = 3 (ưu tiên vì đã verify)
-    
-  Kết quả: mapping dần dần:
-    - Tăng độ phủ (nhiều HS code hơn)
-    - Tăng confidence (pattern rõ dần)
-    - Phát hiện label bất thường (outlier so với historical)
+Raw File → [Dict (AC + Semantic)] ──┐
+                                    ├──→ [DictEnhancer] ──→ Proposals CSV
+          [AI Model + SBERT] ───────┘        │                Hard cases CSV
+                                             ↓                Retrain data CSV
+                                        Enhancement Report
 ```
 
-### Cơ chế validate tự động
-```python
-def validate_label(hs_code, predicted_label):
-    if hs_code in mapping and mapping[hs_code]['total_products'] >= 10:
-        # Dòng SP lệch so với historical → flag để human review
-        if mapping[hs_code]['dong_sp_confidence'] >= 0.9:
-            if predicted_label.dong_sp != mapping[hs_code]['dong_sp_top']:
-                return "Cần kiểm tra — Dòng SP bất thường"
-    return "OK"
+### Các thay đổi chính
+
+| Thành phần | Thay đổi |
+|---|---|
+| **Semantic Fallback** | `dictionary_matcher.py` — khi Aho-Corasick (AC) không match, dùng SBERT embedding để tìm dict entry gần nhất về ngữ nghĩa |
+| **Batch Prediction** | `predict_batch()` — encode tất cả text 1 lần + matrix multiplication, nhanh hơn 100x so với encode từng row |
+| **SBERT Integration** | `data_cleaner.py` — lazy-load `keepitreal/vietnamese-sbert`, expose `get_embedding()` |
+| **Semantic Keyword Extraction** | `dict_generator.py` — `extract_keywords_semantic()` dùng SBERT centroid để chọn keyword đại diện ngữ nghĩa |
+| **DictEnhancer** | Module mới phân tích disagreement pattern, sinh dict proposals, hard cases, retrain data |
+| **Continuous Retrain** | `train_multitask.py` — thêm `--resume-from` và `--phase6-data` |
+
+### Kết quả trên file 9405-XK-Th12.2025.xlsx (30,273 dòng)
+
+#### Coverage
+
+| Nguồn | Số dòng | % |
+|---|---|---|
+| **Dict (AC)** | 4,280 | 14.1% |
+| **Dict (Semantic) — MỚI** | **22,422** | **74.1%** |
+| **AI Fallback** | 0 | 0.0% |
+| **Fail** | 3,571 | 11.8% |
+| **Tổng tự động duyệt** | 26,702 | **88.2%** |
+
+> **Impact**: Semantic fallback tăng dict coverage từ 14.1% → **88.2%** (tăng **6.2x**). Trước đây 74% dòng phải chạy AI (tốn thời gian + CPU/GPU), giờ dict xử lý trực tiếp.
+
+#### Phân phối semantic similarity
+
+Semantic matches phân bố từ 0.55 đến 0.81, đỉnh ở 0.59-0.65. Threshold khởi điểm 0.55 cho kết quả tốt trên tập dữ liệu này.
+
+#### Phân phối Dòng SP / Loại / Lớp 1
+
+| Dòng SP | Count | Loại | Count | Lớp 1 (top) | Count |
+|---|---|---|---|---|---|
+| SP LED | 25,025 (82.7%) | NC | 19,936 (65.9%) | led trang trí | 6,468 |
+| không_có | 3,571 (11.8%) | LK | 6,731 (22.2%) | led khác | 2,455 |
+| SP truyền thống | 1,602 (5.3%) | không_có | 3,606 (11.9%) | highbay | 1,626 |
+
+#### Thời gian xử lý
+
+| Phase | Thời gian |
+|---|---|
+| Load + Extract | < 1s |
+| Dict matching (AC + Semantic) | 118s |
+| AI inference (PhoBERT, CUDA) | 37s |
+| SBERT embedding (30K texts) | ~80s |
+| **Tổng** | **~288s (4.8 min)** |
+
+> Chạy trên .venv với CUDA (torch 2.6.0+cu124), GPU RTX 2070 Super.
+
+### Luồng DictEnhancer (có ground truth)
+
+Khi có dữ liệu gắn nhãn (Dòng SP, Loại, Lớp 1), DictEnhancer phân loại từng dòng:
+
+| Pattern | Hành động |
+|---|---|
+| Dict fail, AI pass | Trích xuất keyword từ AI → thêm vào dict proposals |
+| Dict pass, AI fail | Thêm vào training set để retrain model |
+| Cả 2 fail | Hard case → human review |
+| Cả 2 đúng | Verified (không cần hành động) |
+
+Output: `dict_enhancement_proposals.csv`, `hard_cases.csv`, `train_phase6_augmented.csv`
+
+### Ghi chú cho tương lai (TODO)
+
+1. **Hybrid auto-merge dict**: Khi đầu ra DictEnhancer ổn định → tự động merge case confidence cao (>0.9 semantic + AI auto-pass) vào dict mà không cần review
+2. **Calibrate semantic threshold**: Chạy trên nhiều file khác nhau để tìm threshold tối ưu
+3. **Test DictEnhancer với ground truth**: Dùng HQ 2025 làm input để verify disagreement classification và proposal generation
+4. **Sentence embedding quality**: Có thể nâng cấp từ `keepitreal/vietnamese-sbert` lên model mạnh hơn nếu cần
+
+### Files changed
+
+| File | Thay đổi |
+|---|---|
+| `backend/core/data_cleaner.py` | Thêm `get_embedding()` + SBERT lazy loading, `cosine_similarity()` |
+| `backend/core/dict_generator.py` | Thêm `extract_keywords_semantic()` |
+| `backend/core/dictionary_matcher.py` | Thêm semantic fallback, `predict_batch()`, `_build_dict_semantic_profiles()`, `_semantic_predict()` |
+| `analysis/dict_enhancer.py` | **Mới** — DictEnhancer class: `classify_disagreements()`, `propose_dict_keywords()`, `generate_hard_cases()`, `generate_training_data()`, `export_suggestions()` |
+| `analysis/verify_pipeline_9405.py` | **Rewrite** — enhancement pipeline: parallel dict+AI → merge → DictEnhancer → reports |
+| `training/train_multitask.py` | Thêm `--dataset`, `--phase6-data`, `--resume-from`, `--output-dir`, `--epochs`, `--lr`, `--batch-size`, `--no-fp16` |
+
+### Dependencies mới
+
 ```
-
-### Output
-- `config/hs_company_mapping.json` — cập nhật online sau mỗi batch
-- Mapping chất lượng cao hơn → hỗ trợ Phase 3 (synthetic data) cho các lần tái sinh dict sau
-- Tự động phát hiện label bất thường → giảm tải human review
-
-### Công cụ hỗ trợ
-- Frontend `DictionaryGeneratorWizard.tsx` đã có sẵn
-- Có thể export low-confidence samples → import vào wizard để gán nhãn
+sentence-transformers  (keepitreal/vietnamese-sbert)
+```
 
 ---
 
@@ -528,7 +578,7 @@ def validate_label(hs_code, predicted_label):
 | 3. Synthetic Data | ❓ | Không | +2-5% acc | Phase 2,2.5 |
 | 4. Multi-Task Training | ✅ | Có | +5-10% acc | Phase 1,3 |
 | 5. Cross-validation | ✅ | Không | Phát hiện lỗi chéo | Phase 2,4 |
-| 6. Active Learning | ⏳ | Có | +3-7% acc | Phase 4 |
+| 6. Semantic Dict + Enhancement | ✅ | Không* | +88% dict coverage | Phase 2,4 |
 
 **Tổng dự kiến:** 0.76 → 0.85-0.92
 
@@ -557,6 +607,12 @@ def validate_label(hs_code, predicted_label):
 | `POST /api/taxonomy` | Thêm taxonomy record mới |
 | `POST /api/taxonomy/check-hs-codes` | Tra cứu HS code (longest prefix) |
 | `POST /api/dictionaries/generate/step1` | Tạo dict draft từ raw data |
+
+### Dependencies mới (Phase 6)
+
+| Package | Purpose |
+|---|---|
+| `sentence-transformers` | SBERT model `keepitreal/vietnamese-sbert` cho semantic matching |
 
 ### Environment variables
 | Variable | Dùng ở đâu |

@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import os
 import asyncio
 import time
+from functools import lru_cache
 from transformers import AutoModel
 
 class PhoBertMultiTask(nn.Module):
@@ -151,6 +152,52 @@ class DataCleaner:
         text = str(text).lower()
         text = re.sub(r'[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]', ' ', text)
         return ' '.join(text.split()).strip()
+
+    _sbert_model = None
+    _sbert_tokenizer = None
+
+    def _load_sbert(self):
+        if DataCleaner._sbert_model is not None:
+            return
+        try:
+            from sentence_transformers import SentenceTransformer
+            model_name = "keepitreal/vietnamese-sbert"
+            print(f"INFO: Loading SBERT model: {model_name}...")
+            DataCleaner._sbert_model = SentenceTransformer(model_name)
+            print(f"INFO: SBERT model loaded successfully.")
+        except Exception as e:
+            print(f"WARNING: Could not load SBERT model: {e}")
+            print(f"WARNING: Semantic features will be unavailable.")
+            DataCleaner._sbert_model = False
+
+    def get_embedding(self, texts):
+        self._load_sbert()
+        if DataCleaner._sbert_model is False:
+            return None
+        single_input = isinstance(texts, str)
+        if single_input:
+            texts = [texts]
+        texts = [str(t).strip() for t in texts]
+        non_empty = [t for t in texts if t]
+        if not non_empty:
+            return np.zeros(768) if single_input else np.zeros((len(texts), 768))
+        embeddings = DataCleaner._sbert_model.encode(non_empty, show_progress_bar=False, normalize_embeddings=True)
+        result_map = {}
+        idx = 0
+        for i, t in enumerate(texts):
+            if t:
+                result_map[i] = embeddings[idx]
+                idx += 1
+            else:
+                result_map[i] = np.zeros(768)
+        if single_input:
+            return result_map[0]
+        return np.array([result_map[i] for i in range(len(texts))])
+
+    def cosine_similarity(self, a, b):
+        a = a / (np.linalg.norm(a) + 1e-10)
+        b = b / (np.linalg.norm(b) + 1e-10)
+        return float(np.dot(a, b))
 
     def _load_label_standard(self):
         config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'label_standard.json')

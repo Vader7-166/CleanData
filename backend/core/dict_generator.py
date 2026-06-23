@@ -763,6 +763,122 @@ class DictionaryGenerator:
             res[i] = ', '.join(top) if top else (fallback.get(i, '') if fallback else '')
         return res
 
+    def extract_keywords_semantic(self, group_prods, group_raw, get_embedding_fn, top_n=12, fallback=None, global_freqs=None):
+        indices = list(group_prods.keys())
+        class_f, local_glob_f = {i: Counter() for i in indices}, Counter()
+        semantic_weights = {i: None for i in indices}
+
+        def ngrams(t, n_min=1, n_max=3):
+            res = []
+            for n in range(n_min, n_max+1):
+                for i in range(len(t)-n+1): res.append(' '.join(t[i:i+n]))
+            return res
+
+        try:
+            all_raws = []
+            idx_map = []
+            for i in indices:
+                raws = group_raw.get(i, [])
+                for r in raws:
+                    all_raws.append(str(r))
+                    idx_map.append(i)
+            if all_raws:
+                embs = get_embedding_fn(all_raws)
+                if embs is not None:
+                    embs = np.asarray(embs)
+                    for i in indices:
+                        mask = np.array([x == i for x in idx_map])
+                        if mask.any():
+                            group_embs = embs[mask]
+                            centroid = group_embs.mean(axis=0)
+                            centroid = centroid / (np.linalg.norm(centroid) + 1e-10)
+                            sims = group_embs @ centroid
+                            rank_w = (sims - sims.min()) / (sims.max() - sims.min() + 1e-10)
+                            semantic_weights[i] = dict(zip(np.where(mask)[0], rank_w))
+        except Exception as e:
+            print(f"DEBUG: Semantic weighting failed: {e}")
+
+        for i in indices:
+            ps = group_prods.get(i, [])
+            for p in ps:
+                ns = ngrams(str(p).split())
+                for n in set(ns): class_f[i][n] += 1; local_glob_f[n] += 1
+
+        actual_glob_f = global_freqs if global_freqs is not None else local_glob_f
+        high_value_kws = {'năng lượng mặt trời', 'solar', 'nlmt'}
+        res = {}
+
+        for i in indices:
+            weights = semantic_weights.get(i)
+            tok_weights = {}
+            if weights is not None:
+                raw_list = group_raw.get(i, [])
+                tgt_len = len(raw_list)
+                prod_idx = 0
+                for idx_in_group in range(tgt_len):
+                    tok = str(group_prods.get(i, [])[idx_in_group]) if idx_in_group < len(group_prods.get(i, [])) else ''
+                    if tok and idx_in_group < len(raw_list):
+                        w = weights.get(prod_idx, 0.5)
+                        for t in tok.split():
+                            tok_weights[t] = max(tok_weights.get(t, 0), w)
+                        prod_idx += 1
+
+            single_cands = []
+            multi_cands = []
+            for n, lf in class_f[i].items():
+                words = n.split()
+                if not all(self._is_valid_cluster_token(w) for w in words):
+                    continue
+
+                gf = actual_glob_f[n] if actual_glob_f[n] > 0 else local_glob_f[n]
+                if gf == 0: gf = 1
+                p = lf / gf
+                if p < 0.05: continue
+
+                base_score = len(words)
+                if any(hv in n for hv in high_value_kws):
+                    base_score += 20
+
+                sem_factor = 1.0
+                if tok_weights:
+                    word_weights = [tok_weights.get(w, 0.5) for w in words]
+                    sem_factor = sum(word_weights) / len(word_weights)
+
+                score = lf * (p ** 2) * base_score * sem_factor
+                if len(words) == 1:
+                    score *= 0.5
+
+                if len(words) == 1:
+                    single_cands.append((n, score))
+                else:
+                    multi_cands.append((n, score))
+
+            single_cands.sort(key=lambda x: x[1], reverse=True)
+            multi_cands.sort(key=lambda x: (len(x[0].split()), x[1]), reverse=True)
+
+            top_single_n = min(8, top_n)
+            top = []
+            for w, _ in single_cands:
+                clean_w = w.replace('_', ' ')
+                if any(clean_w in x for x in top):
+                    continue
+                top = [x for x in top if x not in clean_w]
+                top.append(clean_w)
+                if len(top) >= top_single_n:
+                    break
+
+            for w, _ in multi_cands:
+                clean_w = w.replace('_', ' ')
+                if any(clean_w in x for x in top):
+                    continue
+                top = [x for x in top if x not in clean_w]
+                top.append(clean_w)
+                if len(top) >= top_n:
+                    break
+
+            res[i] = ', '.join(top) if top else (fallback.get(i, '') if fallback else '')
+        return res
+
     def extract_keywords_for_taxonomy(self, tax_df, raw_df):
         tax_df = tax_df.copy(); raw_df = raw_df.copy()
         tax_df.columns = [str(c).strip() for c in tax_df.columns]
