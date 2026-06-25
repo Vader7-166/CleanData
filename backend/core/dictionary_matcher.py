@@ -98,20 +98,39 @@ class DictionaryMatcher:
                 elif any(kw == jk for jk in self.JUNK_KEYWORDS):
                     score = 0
                 
-                # Payload: mapping_idx, kw length, score, kw string
-                self.automaton.add_word(padded_kw, (mapping_idx, len(kw), score, kw))
+                # Payload: mapping_idx, kw length, score, kw string, dict hs
+                self.automaton.add_word(padded_kw, (mapping_idx, len(kw), score, kw, ma_hs))
             
             mapping_idx += 1
             
         self.automaton.make_automaton()
 
-    def predict(self, text):
+    def predict(self, text, hs_code=None):
         text_lower = self.clean_text_for_dict(text)
         padded_text = f" {text_lower} "
         
+        input_hs_prefix = None
+        if hs_code is not None:
+            hs_str = str(hs_code).strip()
+            if hs_str not in ['nan', 'None', '', '0', 'không_có']:
+                hs_str = hs_str.split('.')[0]
+                if len(hs_str) >= 4:
+                    input_hs_prefix = hs_str[:4]
+        
         matches = []
         for end_idx, payload in self.automaton.iter(padded_text):
-            mapping_idx, kw_len, score, kw = payload
+            if len(payload) == 5:
+                mapping_idx, kw_len, score, kw, dict_hs = payload
+            else:
+                mapping_idx, kw_len, score, kw = payload
+                dict_hs = 'không_có'
+                
+            if input_hs_prefix is not None and dict_hs != 'không_có' and len(dict_hs) >= 4:
+                dict_hs_prefix = dict_hs[:4]
+                if input_hs_prefix != dict_hs_prefix:
+                    # Penalize heavily instead of discarding entirely to avoid breaking logic that relies on weak matches
+                    score = score / 10.0
+                    
             start_idx = end_idx - (kw_len + 2) + 1
             word_start = start_idx + 1
             word_end = end_idx - 1

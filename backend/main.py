@@ -14,6 +14,7 @@ import numpy as np
 import os
 import re
 import uuid
+import sys
 import asyncio
 import time
 import io
@@ -193,11 +194,12 @@ async def upload_files(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db)
 ):
-    active_dict = db.query(models.Dictionary).filter(models.Dictionary.is_active == True).first()
-    if not active_dict:
+    # Check for dict_golden.csv directly since the DB check is obsolete for the automated workflow
+    import os
+    if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "storage", "dict_golden.csv")):
         raise HTTPException(
             status_code=400, 
-            detail="Không có bộ từ điển nào được kích hoạt. Vui lòng upload và chọn một bộ từ điển trước khi Clean Data."
+            detail="Không tìm thấy Từ Điển Vàng. Vui lòng vào Cập Nhật Tri Thức AI để hệ thống sinh từ điển trước khi làm sạch dữ liệu."
         )
 
     types_map = {}
@@ -303,23 +305,10 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
         cleaner = get_cleaner()
         result_df = await cleaner.process_async(df, progress_callback=progress_callback, dict_paths=dict_paths, transaction_type=job.get("transaction_type"))
         
-        # Apply column reordering logic
-        try:
-            sample_path = os.path.join(os.path.dirname(__file__), "../dataset/sample.csv")
-            sample_df = pd.read_csv(sample_path, nrows=0)
-            expected_cols = sample_df.columns.tolist()
-        except Exception:
-            expected_cols = ['Ngày', 'Tháng', 'Mã HS', 'Công ty NK', 'Tên hàng', 'DVT', 'Lượng', 'Giá trị', 'Đơn giá', 'Hãng', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Công suất', 'Quốc gia', 'Châu lục', 'MDSD', 'Công ty XK', 'Incoterms', 'Phương thức thanh toán', 'Loại 1', 'Loại 2', 'Năm', 'Loại giao dịch']
-
+        # DataCleaner handles column ordering automatically now
         trang_thai = result_df['Trạng Thái'] if 'Trạng Thái' in result_df.columns else None
-        do_tu_tin = result_df['Độ Tự Tin (%)'] if 'Độ Tự Tin (%)' in result_df.columns else None
-        
-        result_df = result_df.reindex(columns=expected_cols)
-        
-        if trang_thai is not None:
+        if trang_thai is not None and 'Trạng thái' not in result_df.columns:
             result_df['Trạng thái'] = trang_thai
-        if do_tu_tin is not None:
-            result_df['Độ tự tin'] = do_tu_tin
         
         await progress_callback("Generating Preview...")
         job["preview"] = []
@@ -330,7 +319,22 @@ async def process_job(job_id: str, temp_path: str, original_filename: str):
             if out_path.endswith('.csv'):
                 result_df.to_csv(out_path, index=False, encoding='utf-8-sig')
             else:
-                result_df.to_excel(out_path, index=False)
+                # Tách riêng các dòng tự động duyệt và dòng cần kiểm tra
+                mask_exception = result_df['Trạng thái'].astype(str) == 'Cần Nghiệp Vụ'
+                df_clean = result_df[~mask_exception]
+                df_exception = result_df[mask_exception]
+                
+                # Gom nhóm các ngoại lệ
+                if not df_exception.empty:
+                    df_dedup = df_exception.groupby(['Mã HS', 'Hãng']).size().reset_index(name='Số lượng')
+                    df_dedup = df_dedup.sort_values('Số lượng', ascending=False)
+                else:
+                    df_dedup = pd.DataFrame(columns=['Mã HS', 'Hãng', 'Số lượng'])
+                
+                with pd.ExcelWriter(out_path, engine='openpyxl') as writer:
+                    df_clean.to_excel(writer, sheet_name='Dữ liệu chuẩn hóa', index=False)
+                    df_exception.to_excel(writer, sheet_name='Cần Nghiệp Vụ', index=False)
+                    df_dedup.to_excel(writer, sheet_name='Gom nhóm Ngoại lệ', index=False)
                 
         await asyncio.to_thread(save_file)
             
@@ -430,18 +434,47 @@ def get_batch_status(batch_id: str, current_user: models.User = Depends(auth.get
         
     db_jobs = db.query(models.ProcessingJob).filter(models.ProcessingJob.batch_id == batch_id).all()
     job_statuses = []
+    
+    total_jobs = len(db_jobs)
+    completed_jobs = 0
+    error_jobs = 0
+    current_job = False
+    status_message = "Đang xử lý..."
+    
     for j in db_jobs:
         live_job = jobs.get(j.id)
         current_status = live_job["status"] if live_job else j.status
+        prog_msg = live_job.get("progress_msg", "") if live_job else ""
+        
         job_statuses.append({
             "id": j.id,
             "filename": j.filename,
             "status": current_status,
-            "progress_msg": live_job.get("progress_msg", "") if live_job else "",
+            "progress_msg": prog_msg,
             "transaction_type": j.transaction_type,
             "error_message": j.error_message
         })
         
+        if current_status == "done":
+            completed_jobs += 1
+        elif current_status == "error":
+            error_jobs += 1
+        elif current_status in ["pending", "processing"]:
+            current_job = True
+            if prog_msg:
+                status_message = prog_msg
+                
+    progress = 0
+    if total_jobs > 0:
+        # Giả lập progress: nếu đang processing, cho 50% của job đó, done = 100%
+        # Hoặc đơn giản là theo tỷ lệ completed
+        progress = int(((completed_jobs + error_jobs) / total_jobs) * 100)
+        # Nếu đang chạy, ta có thể hardcode một mức progress nhỏ để thanh chạy
+        if progress == 0 and current_job:
+            progress = 30
+        if progress == 100 and current_job:
+            progress = 99
+            
     return {
         "id": batch.id,
         "status": batch.status,
@@ -541,8 +574,10 @@ def download_batch_zip(batch_id: str, current_user: models.User = Depends(get_us
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for job in jobs:
             path = os.path.join(PROCESSED_STORAGE_PATH, f"cleaned_{job.id}_{job.filename}")
+            if job.filename.endswith('.csv'):
+                path = path.replace('.csv', '.xlsx')
             if os.path.exists(path):
-                zip_file.write(path, arcname=f"cleaned_{job.filename}")
+                zip_file.write(path, f"cleaned_{job.filename.replace('.csv', '.xlsx')}")
                 
     zip_buffer.seek(0)
     return StreamingResponse(
@@ -1425,3 +1460,21 @@ async def finalize_dictionary(
         raise HTTPException(status_code=500, detail=f"Error finalizing dictionary: {str(e)}")
 
 
+@app.post("/api/learn")
+async def trigger_learning(current_user: models.User = Depends(auth.get_current_user)):
+    """API endpoint to trigger the knowledge update script."""
+    try:
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "learn_new_hq.py")
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, script_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            return {"status": "error", "message": f"Learning failed: {stderr.decode()}"}
+            
+        return {"status": "success", "message": "Tri thức mới đã được hệ thống học thành công!"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
