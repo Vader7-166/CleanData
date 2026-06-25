@@ -10,28 +10,15 @@ services:
       - ./working:/working
       - ./backend:/app/backend
       - ./dataset:/app/dataset
+      - ./app.db:/app/app.db
     environment:
       - MODEL_PATH=/working
-      - DATABASE_URL=postgresql://user:password@db:5432/cleandata
+      - DATABASE_URL=sqlite:////app/app.db
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-    depends_on:
-      - db
     # Cài đặt nóng các thư viện missing và khởi động server
     command: >
-      sh -c "pip install --no-cache-dir scikit-learn psycopg2-binary pyahocorasick pyvi requests python-dotenv python-multipart openpyxl && 
+      sh -c "pip install --no-cache-dir scikit-learn pyahocorasick pyvi requests python-dotenv python-multipart openpyxl xlrd && 
              uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
-
-  db:
-    image: postgres:15-alpine
-    container_name: data_cleaning_db
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=cleandata
-    ports:
-      - "5433:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
 
   frontend:
     build:

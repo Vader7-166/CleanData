@@ -41,4 +41,5 @@ cleaned_*
 .agent/
 scratch/
 .gemini/
-Create_Dictionary/
+Create_Dictionary/*.db
+backend/storage/

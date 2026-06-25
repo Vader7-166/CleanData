@@ -6,12 +6,7 @@ import time
 import json
 import traceback
 import io
-from pyvi import ViTokenizer
 from collections import Counter
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import DBSCAN
-from sklearn.metrics.pairwise import cosine_distances
-import requests
 
 # ===========================================================================
 # CONSTANTS & CONFIGURATION (Full port from original repo)
@@ -80,6 +75,17 @@ LABEL_STOPWORDS = VI_STOPWORDS | {
     'nonvac', 'disney', 'sports',
     'ky', 'dt', 'rb', 'db', 'wd', 'wt', 'th', 'sb', 'kr', 'us', 'jp',
     'psg', 'ign', 'ptr', 'hsymbl', 'hsty', 'ctg', 'mcx', 'mea', 'mtr',
+}
+
+GLOBAL_STOPWORDS = {
+    'hiệu', 'công suất', 'kích thước', 'jindian', 'philips', 'gp', 'rạng đông', 
+    'điện quang', 'panasonic', 'samsung', 'lg', 'toshiba', 'màu sắc', 'bảo hành'
+}
+
+CONTEXT_RESTRICTED = {
+    'mặt trời': ['năng lượng mặt trời', 'solar'], 
+    'solar': ['năng lượng mặt trời', 'solar'], 
+    'nlmt': ['năng lượng mặt trời', 'solar']
 }
 
 # HS_TAXONOMY: Maps HS code -> Lớp 1 business category
@@ -283,7 +289,7 @@ class DictionaryGenerator:
 
     def tokenize_vi(self, text, use_label_stopwords=False):
         if not text: return [] if use_label_stopwords else ''
-        tokens = ViTokenizer.tokenize(text).split()
+        tokens = text.split()
         sw = self.label_stopwords if use_label_stopwords else self.vi_stopwords
         cleaned = [t.replace('_', ' ') for t in tokens if t.lower() not in sw and len(t) > 1]
         return cleaned if use_label_stopwords else ' '.join(cleaned)
@@ -296,169 +302,7 @@ class DictionaryGenerator:
         if not _VALID_TOKEN_RE.search(t): return False
         return True
 
-    def cluster_products(self, descriptions, eps=0.45, min_samples=2):
-        n = len(descriptions)
-        if n < 2: return np.array([0] * n)
 
-        MAX_CLUSTER_SIZE = 2000  # Cap to prevent OOM (2000×2000×8 = ~32MB)
-
-        v = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1, max_df=0.95)
-        try:
-            m = v.fit_transform(descriptions)
-
-            if n <= MAX_CLUSTER_SIZE:
-                # Small enough — use original exact logic
-                d = cosine_distances(m)
-                return DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed').fit_predict(d)
-            else:
-                # Large N — sample, cluster, then assign remainder via cosine to centroids
-                print(f"DEBUG: HS group has {n} items (>{MAX_CLUSTER_SIZE}), using sampling strategy")
-                sample_idx = np.random.RandomState(42).choice(n, MAX_CLUSTER_SIZE, replace=False)
-                m_sample = m[sample_idx]
-                d_sample = cosine_distances(m_sample)
-                labels_sample = DBSCAN(eps=eps, min_samples=min_samples, metric='precomputed').fit_predict(d_sample)
-
-                all_labels = np.full(n, -1)
-                all_labels[sample_idx] = labels_sample
-
-                unique_labels = set(labels_sample) - {-1}
-                if unique_labels:
-                    # Compute centroid for each cluster (mean of TF-IDF vectors)
-                    centroids = {}
-                    for lbl in unique_labels:
-                        mask = labels_sample == lbl
-                        centroids[lbl] = np.asarray(m_sample[mask].mean(axis=0))
-
-                    # Assign remaining items to nearest centroid within eps
-                    remaining_idx = np.setdiff1d(np.arange(n), sample_idx)
-                    for idx in remaining_idx:
-                        row = np.asarray(m[idx].todense())
-                        min_dist = float('inf')
-                        best_lbl = -1
-                        for lbl, cent in centroids.items():
-                            dist = cosine_distances(row, cent)[0][0]
-                            if dist < eps and dist < min_dist:
-                                min_dist = dist
-                                best_lbl = lbl
-                        all_labels[idx] = best_lbl
-
-                return all_labels
-        except Exception as e:
-            print(f"DEBUG: cluster_products error: {e}")
-            return np.array([0] * n)
-
-    def get_cluster_name_fallback(self, products, raw_descriptions=None, top_n=4):
-        words = [w for p in products for w in p.split() if self._is_valid_cluster_token(w)]
-        if words:
-            top = [w for w, _ in Counter(words).most_common(top_n)]
-            if len(top) >= 1: return ' '.join(top).capitalize()
-        if raw_descriptions:
-            cands = []
-            for d in raw_descriptions:
-                cl = re.sub(r'^[^#]*#\s*&?\s*', '', str(d))
-                cl = re.sub(r'#.*$', '', cl).strip()
-                v = [w for w in cl.lower().split() if self._is_valid_cluster_token(w)]
-                if len(v) >= 1: cands.append(' '.join(v[:6]))
-            if cands: return min(cands, key=len)[:60].capitalize()
-            # If all tokens were invalid, just return the first raw description
-            return str(raw_descriptions[0])[:60].capitalize()
-        return "Chưa phân loại"
-
-    def get_cluster_names_tfidf(self, clusters_data, top_n=4):
-        labels = list(clusters_data.keys())
-        docs = [' '.join([t for s in clusters_data[l]['prods'] for t in s.split() if self._is_valid_cluster_token(t)]) for l in labels]
-        if len(labels) <= 1: return {l: self.get_cluster_name_fallback(clusters_data[l]['prods'], clusters_data[l]['raw'], top_n) for l in labels}
-        
-        try:
-            v = TfidfVectorizer(tokenizer=lambda x: x.split(), token_pattern=None, ngram_range=(1, 2), sublinear_tf=True, min_df=1, max_df=0.80)
-            m = v.fit_transform([d if d.strip() else '.' for d in docs])
-            fn = v.get_feature_names_out()
-            vi_re = re.compile(r'[àáảãạăắằẳẵặâấầẩẫậèéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợùúụủũưừứựửữỳýỵỷỹđ]')
-            res = {}
-            for i, l in enumerate(labels):
-                scores = sorted(zip(m[i].indices, m[i].data), key=lambda x: x[1], reverse=True)
-                vi, lat = [], []
-                for idx, _ in scores:
-                    w = fn[idx]
-                    if ' ' not in w and self._is_valid_cluster_token(w):
-                        if vi_re.search(w): vi.append(w)
-                        else: lat.append(w)
-                    if len(vi) >= top_n: break
-                top = (vi[:top_n] + lat)[:top_n]
-                if len(top) >= 2:
-                    cnt = Counter(docs[i].split())
-                    top.sort(key=lambda w: cnt.get(w, 0), reverse=True)
-                    res[l] = ' '.join(top).capitalize()
-                else: res[l] = self.get_cluster_name_fallback(clusters_data[l]['prods'], clusters_data[l]['raw'], top_n)
-            return res
-        except: return {l: self.get_cluster_name_fallback(clusters_data[l]['prods'], clusters_data[l]['raw'], top_n) for l in labels}
-
-    def detect_type(self, hs_code, name, samples):
-        txt = (name + ' ' + ' '.join(samples)).lower()
-        hits = sum(1 for kw in LK_KEYWORDS if kw in txt)
-        if hits >= 2: return 'LK'
-        if hs_code in self.hs_type_map: return self.hs_type_map[hs_code]
-        return 'LK' if hits >= 1 else 'NC'
-
-    def label_clusters_llm(self, names_tfidf, data, batch_size=15, progress_callback=None):
-        if not self.deepseek_api_key: return names_tfidf
-        try:
-            lbls = [l for l in names_tfidf.keys() if l != -1]
-            res = {l: names_tfidf[l] for l in names_tfidf.keys() if l == -1}
-            total_batches = len(lbls)//batch_size + (1 if len(lbls) % batch_size != 0 else 0)
-            if total_batches == 0:
-                total_batches = 1
-            print(f"DEBUG: Starting DeepSeek LLM labeling for {len(lbls)} clusters in {total_batches} batches")
-            
-            headers = {
-                "Authorization": f"Bearer {self.deepseek_api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            for i in range(0, len(lbls), batch_size):
-                batch_idx = i//batch_size + 1
-                if progress_callback:
-                    progress_callback(batch_idx, total_batches, f"LLM Labeling batch {batch_idx} of {total_batches}...")
-                batch = lbls[i:i+batch_size]
-                prompt = "Bạn là chuyên gia phân loại hàng hóa hải quan. Hãy đặt TÊN DANH MỤC ngắn gọn, có ý nghĩa cho các nhóm sản phẩm sau.\n\n"
-                prompt += "YÊU CẦU:\n"
-                prompt += "- CHỈ trả về định dạng JSON hợp lệ, KHÔNG GIẢI THÍCH. Ví dụ: {\"0\": \"Tên danh mục 0\", \"1\": \"Tên danh mục 1\"}\n"
-                prompt += "- Tên danh mục dài 2-5 từ tiếng Việt, viết hoa chữ cái đầu.\n"
-                prompt += "- Tên phải phản ánh đúng BẢN CHẤT CỦA SẢN PHẨM (danh từ chính đứng trước), ví dụ: 'Bình giữ nhiệt', 'Đèn LED âm trần', 'Nắp đậy bình'.\n"
-                prompt += "- TUYỆT ĐỐI KHÔNG chứa mã số (ví dụ: RS378B), tên thương hiệu (Philips), dung tích/kích thước (12oz, 15W).\n\n"
-                prompt += "DỮ LIỆU CÁC NHÓM:\n"
-                for l in batch:
-                    prompt += f"--- Nhóm ID: {l} ---\n"
-                    prompt += f"Từ khóa đặc trưng: {names_tfidf[l]}\n"
-                    prompt += f"Sản phẩm mẫu:\n"
-                    for s in data[l]['raw'][:3]:
-                        prompt += f"- {s}\n"
-                    prompt += "\n"
-                try:
-                    payload = {
-                        "model": "deepseek-chat",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0.2,
-                        "response_format": {"type": "json_object"}
-                    }
-                    resp = requests.post("https://api.deepseek.com/chat/completions", json=payload, headers=headers, timeout=60)
-                    resp.raise_for_status()
-                    resp_json = resp.json()
-                    content = resp_json["choices"][0]["message"]["content"].strip()
-                    js = json.loads(content)
-                    print(f"DEBUG: LLM batch {i//batch_size + 1} success.")
-                    for l in batch: 
-                        val = js.get(str(l)) or js.get(l)
-                        if isinstance(val, dict):
-                            val = val.get("id") or val.get("Tên") or (list(val.values())[0] if val else None)
-                        res[l] = str(val) if val else names_tfidf[l]
-                except Exception as e:
-                    print(f"DEBUG: LLM batch {i//batch_size + 1} failed: {e}")
-                    for l in batch: res[l] = names_tfidf[l]
-            return res
-        except Exception as e: 
-            print(f"DEBUG: LLM labeling global fail: {e}")
-            return names_tfidf
 
     def generate_draft_taxonomy(self, raw_df, eps=0.70, min_samples=8, use_llm=True, progress_callback=None):
         raw_df = raw_df.copy()
@@ -494,155 +338,69 @@ class DictionaryGenerator:
         raw_df['_tok'] = raw_df['_clean'].apply(lambda x: self.tokenize_vi(x))
         raw_df = raw_df[raw_df['_tok'].str.len() > 0].reset_index(drop=True)
         
-        # === FAST PATH: If raw file already has HQ business columns, skip clustering ===
+        # === FAST PATH ONLY: Must be pre-labeled HQ data ===
         hq_cols = {'Dòng SP', 'Loại', 'Lớp 1'}
-        if hq_cols.issubset(set(raw_df.columns)):
-            print("DEBUG: Pre-labeled HQ data detected. Using fast-path (skip DBSCAN/LLM).")
-            if progress_callback:
-                progress_callback(1, 1, "Pre-labeled data detected, grouping...")
+        if not hq_cols.issubset(set(raw_df.columns)):
+            raise ValueError("File tải lên không hợp lệ. Vui lòng sử dụng file chuẩn của Hải quan (có chứa các cột: Dòng SP, Loại, Lớp 1).")
             
-            lop2_col = 'Lớp 2' if 'Lớp 2' in raw_df.columns else None
-            group_cols = ['HS_Code', 'Dòng SP', 'Loại', 'Lớp 1']
-            if lop2_col:
-                group_cols.append(lop2_col)
-            
-            # Clean category values
-            for col in group_cols[1:]:  # skip HS_Code
-                raw_df[col] = raw_df[col].fillna('0').astype(str).str.strip()
-            
-            all_rows = []
-            cluster_counter = 0
-            cluster_map = {}  # (hs, group_key) -> cluster_id
-            
-            for keys, grp in raw_df.groupby(group_cols, sort=False):
-                hs = keys[0]
-                dong_sp = keys[1]
-                loai = keys[2]
-                lop1 = keys[3]
-                lop2 = keys[4] if lop2_col else '0'
-                
-                group_key = (hs, dong_sp, loai, lop1, lop2)
-                if group_key not in cluster_map:
-                    cluster_map[group_key] = cluster_counter
-                    cluster_counter += 1
-                cid = cluster_map[group_key]
-                
-                raw_df.loc[grp.index, '_cluster'] = cid
-                
-                all_rows.append({
-                    'Mã HS': hs,
-                    'Dòng SP': dong_sp if dong_sp != '0' else (self.dong_sp_overrides.get(hs) or self.dong_sp_map.get(hs[:4], f'SP {hs[:4]}')),
-                    'Loại': loai if loai != '0' else self.hs_type_map.get(hs, 'NC'),
-                    'Lớp 1': lop1 if lop1 != '0' else self.hs_taxonomy.get(hs, 'Chưa phân loại'),
-                    'Lớp 2': lop2 if lop2 != '0' else '',
-                    'Keyword': '',
-                    'Cluster_ID': int(cid),
-                    'Số lượng SP': len(grp),
-                    'Mô tả mẫu': str(grp['Detailed_Product'].iloc[0])[:120],
-                })
-            
-            df = pd.DataFrame(all_rows)
-            # Merge duplicate groups
-            merged = []
-            if not df.empty:
-                merge_cols = ['Mã HS', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2']
-                for _, g in df.groupby(merge_cols, sort=False):
-                    best = g.loc[g['Số lượng SP'].idxmax()].copy()
-                    best['Số lượng SP'] = g['Số lượng SP'].sum()
-                    merged.append(best.to_dict())
-            return pd.DataFrame(merged).sort_values(['Mã HS', 'Số lượng SP'], ascending=[True, False]).reset_index(drop=True), raw_df
+        print("DEBUG: Pre-labeled HQ data detected. Using exact grouping.")
+        if progress_callback:
+            progress_callback(1, 1, "Pre-labeled data detected, grouping...")
         
-        # === STANDARD PATH: Clustering via DBSCAN ===
+        lop2_col = 'Lớp 2' if 'Lớp 2' in raw_df.columns else None
+        group_cols = ['HS_Code', 'Dòng SP', 'Loại', 'Lớp 1']
+        if lop2_col:
+            group_cols.append(lop2_col)
+        
+        # Clean category values
+        for col in group_cols[1:]:  # skip HS_Code
+            raw_df[col] = raw_df[col].fillna('0').astype(str).str.strip()
+        
         all_rows = []
-        unique_hs = sorted(raw_df['HS_Code'].unique())
-        total_hs = len(unique_hs)
-        hs_idx = 0
+        cluster_counter = 0
+        cluster_map = {}  # (hs, group_key) -> cluster_id
         
-        for hs in unique_hs:
-            if not hs: continue
-            hs_idx += 1
-            if progress_callback:
-                progress_callback(hs_idx, total_hs, f"Processing HS Code {hs} ({hs_idx}/{total_hs})...")
+        for keys, grp in raw_df.groupby(group_cols, sort=False):
+            hs = keys[0]
+            dong_sp = keys[1]
+            loai = keys[2]
+            lop1 = keys[3]
+            lop2 = keys[4] if lop2_col else '0'
             
-            sub = raw_df[raw_df['HS_Code'] == hs].copy()
-            lbls = self.cluster_products(sub['_tok'].tolist(), eps, min_samples)
-            raw_df.loc[sub.index, '_cluster'] = lbls
+            group_key = (hs, dong_sp, loai, lop1, lop2)
+            if group_key not in cluster_map:
+                cluster_map[group_key] = cluster_counter
+                cluster_counter += 1
+            cid = cluster_map[group_key]
             
-            c_data = {}
-            for l in sorted(set(lbls)):
-                m = lbls == l
-                c_data[l] = {
-                    'prods': sub[m]['_tok'].tolist(), 'raw': sub[m]['Detailed_Product'].tolist(),
-                    'count': m.sum(), 'sample': str(sub[m]['Detailed_Product'].iloc[0])[:120]
-                }
+            raw_df.loc[grp.index, '_cluster'] = cid
             
-            # Helper to get dynamic name from products
-            def get_dynamic_name(top_n):
-                all_prods, all_raw = [], []
-                for l, d in c_data.items():
-                    if l != -1:
-                        all_prods.extend(d['prods'])
-                        all_raw.extend(d['raw'])
-                if not all_prods and -1 in c_data:
-                    all_prods, all_raw = c_data[-1]['prods'], c_data[-1]['raw']
-                return self.get_cluster_name_fallback(all_prods, all_raw, top_n)
-
-            lop1 = self.hs_taxonomy.get(hs)
-            if not lop1:
-                # Prefix matching logic (User DB/Hardcoded)
-                for length in [8, 6, 4]:
-                    if len(hs) >= length:
-                        prefix = hs[:length]
-                        if prefix in self.hs_taxonomy:
-                            lop1 = self.hs_taxonomy[prefix]
-                            break
-            
-            # Official Taxonomy fallback
-            if not lop1 or lop1 == 'Chưa phân loại':
-                if hs in self.official_taxonomy:
-                    lop1 = self.official_taxonomy[hs]
-                else:
-                    for length in [8, 6]:
-                        if len(hs) >= length:
-                            prefix = hs[:length]
-                            if prefix in self.official_taxonomy:
-                                lop1 = self.official_taxonomy[prefix]
-                                break
-                            
-            if not lop1 or lop1 == 'Chưa phân loại':
-                fallback = get_dynamic_name(3)
-                lop1 = fallback.title() if fallback else 'Chưa phân loại'
-            
-            dong = self.dong_sp_overrides.get(hs) or self.dong_sp_map.get(hs[:4])
-            if not dong:
-                fallback = get_dynamic_name(2)
-                dong = f"SP {fallback.upper()}" if fallback else f"SP {hs[:4]}"
-            
-            non_out = {l: v for l, v in c_data.items() if l != -1}
-            names = self.get_cluster_names_tfidf(non_out)
-            if use_llm: names = self.label_clusters_llm(names, non_out, progress_callback=progress_callback)
-            if -1 in c_data: names[-1] = f"[OUTLIER] {self.get_cluster_name_fallback(c_data[-1]['prods'], c_data[-1]['raw'], 3)}"
-
-            for l in sorted(set(lbls)):
-                all_rows.append({
-                    'Mã HS': hs, 'Dòng SP': dong, 'Loại': self.detect_type(hs, names[l], c_data[l]['raw'][:5]),
-                    'Lớp 1': lop1, 'Lớp 2': names[l], 'Keyword': '', 'Cluster_ID': int(l),
-                    'Số lượng SP': c_data[l]['count'], 'Mô tả mẫu': c_data[l]['sample']
-                })
-
+            all_rows.append({
+                'Mã HS': hs,
+                'Dòng SP': dong_sp if dong_sp != '0' else (self.dong_sp_overrides.get(hs) or self.dong_sp_map.get(hs[:4], f'SP {hs[:4]}')),
+                'Loại': loai if loai != '0' else self.hs_type_map.get(hs, 'NC'),
+                'Lớp 1': lop1 if lop1 != '0' else self.hs_taxonomy.get(hs, 'Chưa phân loại'),
+                'Lớp 2': lop2 if lop2 != '0' else '',
+                'Keyword': '',
+                'Cluster_ID': int(cid),
+                'Số lượng SP': len(grp),
+                'Mô tả mẫu': str(grp['Detailed_Product'].iloc[0])[:120],
+            })
+        
         df = pd.DataFrame(all_rows)
-        # Final merge for same Lớp 2 under same HS
+        # Merge duplicate groups
         merged = []
         if not df.empty:
-            for (h, l2), g in df.groupby(['Mã HS', 'Lớp 2'], sort=False):
+            merge_cols = ['Mã HS', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2']
+            for _, g in df.groupby(merge_cols, sort=False):
                 best = g.loc[g['Số lượng SP'].idxmax()].copy()
                 best['Số lượng SP'] = g['Số lượng SP'].sum()
                 merged.append(best.to_dict())
         return pd.DataFrame(merged).sort_values(['Mã HS', 'Số lượng SP'], ascending=[True, False]).reset_index(drop=True), raw_df
 
-    def extract_keywords_ai(self, group_prods, top_n=12, fallback=None, global_freqs=None):
+    def extract_keywords_ai(self, group_prods, top_n=15, fallback=None, global_freqs=None):
         indices = list(group_prods.keys())
-        class_f, local_glob_f = {i: Counter() for i in indices}, Counter()
+        class_f, local_glob_f = {i: __import__('collections').Counter() for i in indices}, __import__('collections').Counter()
         def ngrams(t, n_min=1, n_max=3):
             res = []
             for n in range(n_min, n_max+1):
@@ -659,163 +417,37 @@ class DictionaryGenerator:
         res = {}
         for i in indices:
             cands = []
+            
             for n, lf in class_f[i].items():
                 words = n.split()
                 if not any(self._is_valid_cluster_token(w) for w in words): continue
+                if any(w in GLOBAL_STOPWORDS for w in words): continue
                 
                 gf = actual_glob_f[n] if actual_glob_f[n] > 0 else local_glob_f[n]
                 if gf == 0: gf = 1
                 p = lf / gf
-                if p < 0.05: continue  # MUST be at least 5% pure
+                
+                # PURITY CHECK: Must be somewhat unique to this class
+                # If a word is very generic across all HS codes, reject it
+                if p < 0.05: continue 
                 
                 base_score = len(words)
                 if any(hv in n for hv in high_value_kws):
-                    base_score += 20
-                    
-                score = lf * (p**2) * base_score
-                if len(words) == 1:
-                    score *= 0.5
-                    
-                cands.append((n, score))
+                    base_score += 5
                 
-            # Sort by length descending, then score descending
-            cands.sort(key=lambda x: (len(x[0].split()), x[1]), reverse=True)
+                score = (p * 50) + (lf * 2) * base_score
+                cands.append((n, score, lf))
+                
+            cands.sort(key=lambda x: (x[1], x[2]), reverse=True)
             
-            top = []
-            for w, _ in cands:
-                clean_w = w.replace('_', ' ')
-                
-                # If clean_w is a substring of any existing word in top, skip it
-                if any(clean_w in x for x in top): 
-                    continue
-                    
-                # If any existing word in top is a substring of clean_w, remove it
-                top = [x for x in top if x not in clean_w]
-                
-                top.append(clean_w)
-                if len(top) >= top_n: 
-                    break
-                    
-            res[i] = ', '.join(top) if top else (fallback.get(i, '') if fallback else '')
+            final_kws = []
+            for c in cands:
+                if len(final_kws) >= top_n: break
+                w = c[0]
+                if not any(w in ex and w != ex for ex in final_kws):
+                    final_kws.append(w)
+            res[i] = ', '.join(final_kws)
         return res
-
-    def extract_keywords_for_taxonomy(self, tax_df, raw_df):
-        tax_df = tax_df.copy(); raw_df = raw_df.copy()
-        tax_df.columns = [str(c).strip() for c in tax_df.columns]
-        
-        # Standardize raw_df columns to handle both raw files and exported draft sheets
-        raw_cols = {str(c).strip(): c for c in raw_df.columns}
-        
-        # HS Code column mapping
-        hs_col = None
-        for cand in ['HS_Code', 'Mã HS', 'HS']:
-            if cand in raw_cols:
-                hs_col = raw_cols[cand]
-                break
-        if not hs_col:
-            raise KeyError(f"Could not find HS Code column in raw data. Available: {list(raw_cols.keys())}")
-
-        # Product description column mapping
-        prod_col = None
-        for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
-            if cand in raw_cols:
-                prod_col = raw_cols[cand]
-                break
-        if not prod_col:
-            raise KeyError(f"Could not find Product Description column in raw data. Available: {list(raw_cols.keys())}")
-
-        # Standardize to internal names for processing
-        raw_df['HS_Code_Internal'] = raw_df[hs_col].astype(str).apply(lambda x: re.sub(r'\D', '', x))
-        
-        detailed_product = raw_df[prod_col].copy()
-        for fallback_col in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc']:
-            if fallback_col in raw_cols:
-                actual_col = raw_cols[fallback_col]
-                if actual_col != prod_col:
-                    detailed_product = detailed_product.fillna(raw_df[actual_col])
-                    
-        raw_df['Detailed_Product_Internal'] = detailed_product.astype(str)
-        
-        # Ensure 'Mã HS' in taxonomy is also cleaned for matching
-        tax_df['Mã HS_Internal'] = tax_df['Mã HS'].astype(str).apply(lambda x: re.sub(r'\D', '', x))
-        
-        raw_df['_clean'] = raw_df['Detailed_Product_Internal'].apply(self.clean_text)
-        raw_df['_tok'] = raw_df['_clean'].apply(lambda x: ' '.join(self.tokenize_vi(x, True)))
-
-        c_map = {}
-        # If Cluster_ID is present, we use it for precise matching
-        target_cluster_col = 'Cluster_ID'
-        if '_cluster' in raw_df.columns: target_cluster_col = '_cluster'
-
-        if target_cluster_col in raw_df.columns:
-            for _, r in raw_df.iterrows():
-                c_val = r[target_cluster_col]
-                if pd.isna(c_val) or str(c_val).strip() == '': continue
-                try:
-                    c_map.setdefault((str(r['HS_Code_Internal']), int(float(c_val))), []).append(r['_tok'])
-                except ValueError:
-                    pass
-
-        res = [''] * len(tax_df)
-
-        cluster_id_matches = 0
-        fallback_matches = 0
-        # --- Pre-compute global frequencies across entire dataset ---
-        from collections import Counter
-        def ngrams(t, n_min=1, n_max=3):
-            res = []
-            for n in range(n_min, n_max+1):
-                for i in range(len(t)-n+1): res.append(' '.join(t[i:i+n]))
-            return res
-            
-        global_freqs = Counter()
-        for tok_str in raw_df['_tok']:
-            if not isinstance(tok_str, str) or not tok_str.strip():
-                continue
-            ns = ngrams(tok_str.split())
-            for n in set(ns):
-                global_freqs[n] += 1
-        # -----------------------------------------------------------
-
-        # Iterate over unique HS codes to scope purity locally
-        hs_codes = tax_df['Mã HS_Internal'].unique()
-        for hs in hs_codes:
-            tax_mask = tax_df['Mã HS_Internal'] == hs
-            tax_indices = tax_df[tax_mask].index.tolist()
-
-            docs = {}
-            fb = {}
-            sub_raw = raw_df[raw_df['HS_Code_Internal'] == hs]
-
-            for i in tax_indices:
-                r = tax_df.loc[i]
-                l1, l2 = str(r.get('Lớp 1','')), str(r.get('Lớp 2',''))
-                fb[i] = l2 if (l2 and l2.lower() not in ('nan','0')) else l1
-                cid = r.get('Cluster_ID')
-
-                cid_int = None
-                if not pd.isna(cid) and str(cid).strip() != '':
-                    try:
-                        cid_int = int(float(cid))
-                    except ValueError:
-                        pass
-
-                if cid_int is not None and (hs, cid_int) in c_map:
-                    docs[i] = c_map[(hs, cid_int)]
-                    cluster_id_matches += 1
-                else:
-                    p = '|'.join(re.escape(s) for s in fb[i].lower().split() if len(s)>2)
-                    docs[i] = sub_raw[sub_raw['Detailed_Product_Internal'].str.contains(p, case=False, na=False)]['_tok'].tolist() if p else []
-                    fallback_matches += 1
-
-            # Extract keywords scoped to this HS code
-            kw_m = self.extract_keywords_ai(docs, 12, fb, global_freqs=global_freqs)
-            for i, k in kw_m.items(): 
-                res[i] = k
-
-        print(f"DEBUG: Keyword extraction matches: {cluster_id_matches} via Cluster_ID, {fallback_matches} via Fallback Regex.")
-        tax_df['Keyword'] = res
-        return tax_df.drop(columns=['Mã HS_Internal'], errors='ignore')
 
     def generate_dictionary_from_hq(self, raw_df, progress_callback=None):
         """
@@ -902,10 +534,25 @@ class DictionaryGenerator:
                     'Số lượng SP': len(grp)
                 })
                 
-            kw_m = self.extract_keywords_ai(docs, 12, fb, global_freqs=global_freqs)
+            kw_m = self.extract_keywords_ai(docs, 15, fb, global_freqs=global_freqs)
             
             for i, meta in enumerate(group_keys):
-                meta['Keyword'] = kw_m.get(i, '')
+                extracted = kw_m.get(i, '')
+                
+                label_words = set()
+                for k in ['Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2']:
+                    val = meta.get(k, '')
+                    if val and val.lower() not in ('0', 'chưa phân loại', 'nc', ''):
+                        cleaned_val = self.clean_text(val)
+                        if cleaned_val:
+                            label_words.add(cleaned_val)
+                
+                existing_kws = [k.strip() for k in extracted.split(',')] if extracted else []
+                for lw in label_words:
+                    if lw not in existing_kws:
+                        existing_kws.insert(0, lw)
+                        
+                meta['Keyword'] = ', '.join(filter(None, existing_kws))
                 results.append(meta)
                 
         if progress_callback:

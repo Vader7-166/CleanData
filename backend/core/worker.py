@@ -55,7 +55,11 @@ def process_chunk(chunk_data):
     input_for_ai = input_for_ai.apply(matcher.clean_text_for_dict)
     
     # 3. Predict with DictionaryMatcher
-    dict_predictions = input_for_ai.apply(matcher.predict)
+    predict_df = pd.DataFrame({
+        'text': input_for_ai,
+        'hs_code': chunk_df['Mã HS'] if 'Mã HS' in chunk_df.columns else None
+    })
+    dict_predictions = predict_df.apply(lambda row: matcher.predict(row['text'], row['hs_code']), axis=1)
     dict_predictions.columns = ['Ket_Qua_Gop', 'Độ Tự Tin (%)', 'Trạng Thái']
     
     # Concatenate all results

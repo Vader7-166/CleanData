@@ -9,6 +9,7 @@ import CleanData from './pages/CleanData';
 import Dictionary from './pages/Dictionary';
 import DictionaryGenerator from './pages/DictionaryGenerator';
 import HSTaxonomy from './pages/HSTaxonomy';
+import KnowledgeUpdate from './pages/KnowledgeUpdate';
 
 import { FileProvider } from './contexts/FileContext';
 
@@ -35,6 +36,7 @@ function App() {
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="clean" element={<CleanData />} />
+            <Route path="knowledge-update" element={<KnowledgeUpdate />} />
             <Route path="dictionary" element={<Dictionary />} />
             <Route path="dictionary/generate" element={<DictionaryGenerator />} />
             <Route path="taxonomy" element={<HSTaxonomy />} />

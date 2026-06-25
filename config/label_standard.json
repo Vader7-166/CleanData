@@ -1,0 +1,75 @@
+{
+  "_description": "Single source of truth for label naming conventions across CleanData system. All dictionary loading, dict generation, and AI inference MUST normalize labels through this spec.",
+  "dong_sp": {
+    "allowed": [
+      "SP LED",
+      "SP khác",
+      "SP truyền thống",
+      "đèn uv",
+      "SP THỦY TINH",
+      "SP BÌNH/PHÍCH",
+      "SP ĐÈN/BÓNG ĐÈN",
+      "SP ĐÈN/THIẾT BỊ CHIẾU SÁNG",
+      "SP THIẾT BỊ ĐIỆN GIA DỤNG",
+      "SP BỘ NGUỒN/BIẾN ÁP"
+    ],
+    "aliases": {
+      "Đèn UV": "đèn uv",
+      "đèn UV": "đèn uv",
+      "Sp truyền thống": "SP truyền thống",
+      "SP LEd": "SP LED",
+      "SP Led": "SP LED",
+      "sp led": "SP LED",
+      "sp khác": "SP khác",
+      "sp truyền thống": "SP truyền thống",
+      "SP ĐÈN LED": "SP LED",
+      "SP đèn LED": "SP LED"
+    }
+  },
+  "loai": {
+    "allowed": ["NC", "LK", "không_có"],
+    "aliases": {
+      "nc": "NC",
+      "lk": "LK",
+      "Nguyên chiếc": "NC",
+      "Linh kiện": "LK",
+      "nguyên chiếc": "NC",
+      "linh kiện": "LK",
+      "": "không_có",
+      "nan": "không_có",
+      "None": "không_có",
+      "0": "không_có"
+    }
+  },
+  "lop1": {
+    "case_sensitive": false,
+    "aliases": {
+      "Highbay": "highbay",
+      "Lowbay": "lowbay",
+      "LED khác": "led khác",
+      "Chưa phân loại": "không_có",
+      "": "không_có",
+      "nan": "không_có",
+      "None": "không_có",
+      "0": "không_có"
+    }
+  },
+  "lop2": {
+    "case_sensitive": false,
+    "aliases": {
+      "Smart": "smart",
+      "": "không_có",
+      "nan": "không_có",
+      "None": "không_có",
+      "0": "không_có"
+    }
+  },
+  "normalize_rules": {
+    "trim": true,
+    "strip_whitespace": true,
+    "replace_empty": "không_có",
+    "replace_nan": "không_có",
+    "lowercase_except": ["NC", "LK", "Dòng SP values"],
+    "description": "Loại (NC/LK) giữ uppercase. Lớp 1 và Lớp 2 lowercase toàn bộ. Dòng SP giữ nguyên case theo allowed list."
+  }
+}

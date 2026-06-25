@@ -1,57 +1,105 @@
 import re
 import pickle
+import sqlite3
 import pandas as pd
+
+def clean_text_basic(text):
+    if pd.isna(text): return ""
+    text = str(text).lower()
+    if '#&' in text:
+        parts = [p.strip() for p in text.split('#&') if p.strip()]
+        if parts: text = max(parts, key=len)
+    text = re.sub(r'[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]', ' ', text)
+    return ' '.join(text.split()).strip()
+
 import numpy as np
-import torch
-import torch.nn.functional as F
 import os
 import asyncio
-import time
 
 class DataCleaner:
     def __init__(self, model_path):
-        self.model_path = model_path
-        self.MAX_LENGTH = 64
-        print(f"Loading Tokenizer from {model_path}...")
-        from transformers import AutoTokenizer
+        # We ignore model_path from the old env var since we have our own fixed paths
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.model_path = os.path.join(script_dir, "../storage/classifier_model.pkl")
+        self.dict_path = os.path.join(script_dir, "../storage/dict_golden.csv")
+        self.model = None
+        self.exact_match_cache = {}
+        
+        # Load Ground Truth Cache for exact matches
         try:
-            # Use fast tokenizer for better performance on CPU
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+            db_path = os.path.join(os.path.dirname(__file__), '../storage/ground_truth.db')
+            if os.path.exists(db_path):
+                print(f"Loading Historical Cache from {db_path}...")
+                conn = sqlite3.connect(db_path)
+                df_gt = pd.read_sql('SELECT hs_code, clean_text, "Dòng SP", "Loại", "Lớp 1", "Lớp 2" FROM ground_truth', conn)
+                for _, r in df_gt.iterrows():
+                    key = (str(r['hs_code']).strip(), r['clean_text'])
+                    self.exact_match_cache[key] = {
+                        'Dòng SP': r['Dòng SP'],
+                        'Loại': r['Loại'],
+                        'Lớp 1': r['Lớp 1'],
+                        'Lớp 2': r['Lớp 2']
+                    }
+                conn.close()
+                print(f"Loaded {len(self.exact_match_cache)} exact match historical entries.")
         except Exception as e:
-            print(f"Failed to load fast AutoTokenizer: {e}. Falling back to slow...")
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-        
-        print("Loading Model...")
-        from transformers import AutoModelForSequenceClassification
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        if self.device.type == "cpu":
-            print("INFO: CUDA not available. Applying dynamic quantization for CPU optimization.")
-            # Quantize the model to int8 to speed up CPU inference
-            self.model = torch.quantization.quantize_dynamic(
-                self.model, {torch.nn.Linear}, dtype=torch.qint8
-            )
-            
-        self.model.to(self.device)
-        self.model.eval()
-        
-        if torch.cuda.is_available():
-            torch.backends.cudnn.benchmark = True
-            print("INFO: CUDA available, enabling cuDNN benchmark.")
-
-        with open(f"{model_path}/label_encoder.pkl", "rb") as f:
-            self.label_encoder = pickle.load(f)
-
+            print(f"Failed to load historical cache: {e}")
+        self.dictionary = {}
         self.THRESHOLD = 0.85
-        self.MAX_CONCURRENT_CHUNKS = 1 # Set to 1 as we move to sequential CPU batching
+        self.STOPWORDS = {"có", "bằng", "đèn", "hàng", "mới", "100", "hiệu", "dùng", "để", "sáng", "chiếu", "của", "và", "nhựa", "bộ", "c", "với", "các", "loại", "cho", "1", "2", "3", "0", "led", "sản", "xuất", "bảng", "chiếc", "cái", "unk", "gp", "pce", "w", "v", "kg", "pcs", "set", "thùng", "hộp", "bao", "gói", "bóng", "quang", "điện", "hoạt", "động", "ống", "nước", "thông", "minh", "kích", "thước", "màu", "sắc", "chất", "liệu", "sử", "dụng", "dẫn"}
         
-        import concurrent.futures
-        import multiprocessing
-        self.executor = concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
+        
+        self.load_resources()
+
+    def load_resources(self):
+        print(f"Loading Supervised Dictionary from {self.dict_path}...")
+        if os.path.exists(self.dict_path):
+            try:
+                df_dict = pd.read_csv(self.dict_path)
+                for _, row in df_dict.iterrows():
+                    hs = str(row['Mã HS']).replace('.0', '').strip()
+                    keywords = [k.strip() for k in str(row['Keyword']).split(',')]
+                    
+                    if hs not in self.dictionary:
+                        self.dictionary[hs] = []
+                        
+                    entry_words = set()
+                    for kw in keywords:
+                        entry_words.update(kw.split())
+                    entry_sig = entry_words - self.STOPWORDS
+                    
+                    self.dictionary[hs].append({
+                        'keywords': keywords,
+                        'sig': entry_sig,
+                        'dong_sp': row['Dòng SP'],
+                        'loai': row['Loại'],
+                        'lop1': row['Lớp 1'],
+                        'lop2': row['Lớp 2']
+                    })
+            except Exception as e:
+                print(f"Error loading dictionary: {e}")
+        else:
+            print("WARNING: Dictionary not found!")
+
+        print(f"Loading Classifier Model from {self.model_path}...")
+        if os.path.exists(self.model_path):
+            try:
+                with open(self.model_path, 'rb') as f:
+                    self.model = pickle.load(f)
+            except Exception as e:
+                print(f"Error loading model: {e}")
+        else:
+            print("WARNING: Classifier Model not found!")
 
     def clean_text_for_dict(self, text):
+        if pd.isna(text):
+            return ""
         text = str(text).lower()
+        if '#&' in text:
+            parts = text.split('#&')
+            parts = [p.strip() for p in parts if p.strip()]
+            if parts:
+                text = max(parts, key=len)
         text = re.sub(r'[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]', ' ', text)
         return ' '.join(text.split()).strip()
 
@@ -75,310 +123,253 @@ class DataCleaner:
             if h in raw_text_lower:
                 hang = h.capitalize()
                 break
-        return pd.Series([hang, cong_suat, raw_text])
+        return hang, cong_suat, raw_text
 
-    def predict_with_threshold(self, text):
-        inputs = self.tokenizer(text, padding="max_length", truncation=True, max_length=128, return_tensors="pt")
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-
-        probabilities = F.softmax(outputs.logits, dim=-1)
-        max_prob, pred_id = torch.max(probabilities, dim=-1)
-
-        confidence = max_prob.item()
-        label = self.label_encoder.inverse_transform([pred_id.item()])[0]
-
-        status = "Tự động duyệt (AI)" if confidence >= self.THRESHOLD else "Cần kiểm tra"
-        return pd.Series([label, round(confidence * 100, 2), status])
-
-    def predict_dictionary(self, text):
-        text_lower = self.clean_text_for_dict(text)
-        best_mapping = None
-        max_score = 0
+    def predict_dictionary(self, text_lower, hs_code):
+        if hs_code not in self.dictionary:
+            return None
+            
+        padded_text = f" {text_lower} "
+        best_match = None
+        max_kw_len = 0
         
-        words = text_lower.split()
-        text_words = set(words)
-        candidate_indices = set()
-        for w in words:
-            if w in self.word_to_mappings:
-                candidate_indices.update(self.word_to_mappings[w])
-
-        for idx in candidate_indices:
-            mapping = self.dict_mapping[idx]
-            current_score = 0
-            temp_text = text_lower
-
-            for kw_obj in mapping['keywords']:
-                if not kw_obj['word_set'].issubset(text_words):
+        # 1. Exact Phrase Match
+        for entry in self.dictionary[hs_code]:
+            for kw in entry['keywords']:
+                kw_clean = kw.strip()
+                if len(kw_clean) < 3: 
                     continue
-                
-                pattern = kw_obj['pattern']
-                
-                if pattern.search(temp_text):
-                    temp_text = pattern.sub(' ', temp_text)
-                    current_score += kw_obj['score']
-
-            if current_score > max_score:
-                max_score = current_score
-                best_mapping = mapping
-            elif current_score == max_score and current_score > 0 and best_mapping is not None:
-                current_loai = mapping['label_str'].split(' | ')[1].strip().upper() if ' | ' in mapping['label_str'] else ''
-                best_loai = best_mapping['label_str'].split(' | ')[1].strip().upper() if ' | ' in best_mapping['label_str'] else ''
-                if current_loai == 'NC' and best_loai == 'LK':
-                    best_mapping = mapping
-
-        if best_mapping is not None and max_score >= self.DICT_THRESHOLD:
-            return pd.Series([best_mapping['label_str'], 100.0, f"Tự động duyệt (Từ điển - Điểm: {max_score})"])
-
-        return pd.Series([None, 0.0, "Cần kiểm tra"])
-
-    def predict_ai_batch(self, texts, batch_size=64):
-        if not texts:
-            return []
+                # Check if phrase is in text
+                if f" {kw_clean} " in padded_text:
+                    if len(kw_clean) > max_kw_len:
+                        max_kw_len = len(kw_clean)
+                        best_match = entry
+                        
+        if best_match:
+            return best_match
             
-        start_total = time.time()
-        self.model.eval()
-        predictions = []
+        # 2. Fallback to Overlap Score (Legacy behavior)
+        max_score = 0
+        text_words = set(text_lower.split())
+        text_sig = text_words - self.STOPWORDS
+        len_text_sig = len(text_sig)
         
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i+batch_size]
+        if len_text_sig == 0:
+            return None
             
-            # Use fast tokenizer and reduced max_length
-            inputs = self.tokenizer(
-                batch_texts, 
-                padding=True, 
-                truncation=True, 
-                max_length=self.MAX_LENGTH, 
-                return_tensors="pt"
-            )
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-            with torch.no_grad():
-                # Autocast only for GPU; can cause issues with quantized models on CPU
-                if self.device.type == "cuda":
-                    with torch.autocast('cuda'):
-                        outputs = self.model(**inputs)
-                else:
-                    outputs = self.model(**inputs)
-
-            probabilities = F.softmax(outputs.logits, dim=-1)
-            max_probs, pred_ids = torch.max(probabilities, dim=-1)
-
-            max_probs_numpy = max_probs.cpu().numpy()
-            pred_ids_numpy = pred_ids.cpu().numpy()
-            
-            # Vectorized inverse transform
-            labels = self.label_encoder.inverse_transform(pred_ids_numpy)
-
-            for prob, label in zip(max_probs_numpy, labels):
-                status = "Tự động duyệt (AI)" if prob >= self.THRESHOLD else "Cần kiểm tra"
-                predictions.append((label, round(float(prob) * 100, 2), status))
-        
-        total_time = time.time() - start_total
-        print(f"INFO: AI Batch Inference of {len(texts)} rows took {total_time:.2f}s ({len(texts)/total_time:.2f} rows/s)")
+        for entry in self.dictionary[hs_code]:
+            entry_sig = entry['sig']
+            len_entry_sig = len(entry_sig)
+            if len_entry_sig == 0:
+                continue
                 
-        return predictions
+            overlap = text_sig & entry_sig
+            len_overlap = len(overlap)
+            
+            if len_overlap >= 1:
+                overlap_len = sum(len(w) for w in overlap)
+                overlap_ratio = len_overlap / min(len_text_sig, len_entry_sig)
+                score = overlap_ratio * overlap_len
+                
+                if score > max_score:
+                    max_score = score
+                    best_match = entry
+                    
+        # Lower threshold since exact match failed, but we still want to catch high overlaps
+        if max_score >= 3.0:
+            return best_match
+            
+        return None
+
+    def _process_row_pass1(self, row):
+        # Determine actual description column
+        prod_col = None
+        for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
+            if cand in row.index and pd.notna(row[cand]) and str(row[cand]).strip() != '':
+                prod_col = cand
+                break
+                
+        raw_mo_ta = row[prod_col] if prod_col else ""
+        hang, cong_suat, _ = self.trich_xuat_thong_tin(raw_mo_ta)
+        
+        # Get HS Code
+        hs_col = None
+        for cand in ['HS_Code', 'Mã HS', 'HS Code', 'Mã hàng', 'HS']:
+            if cand in row.index and pd.notna(row[cand]):
+                hs_col = cand
+                break
+        hs_code = str(row[hs_col]).replace('.0', '').strip() if hs_col else ""
+        
+        clean_mo_ta = self.clean_text_for_dict(raw_mo_ta)
+
+        base_res = {
+            'Tên hàng': raw_mo_ta,
+            'Hãng': hang,
+            'Công suất': cong_suat,
+            'Dòng SP': '',
+            'Loại': '',
+            'Lớp 1': '',
+            'Lớp 2': '',
+            'Trạng Thái': '',
+            'Mã HS': hs_code,
+            '_needs_model': False,
+            '_feature': f"hs{hs_code} {clean_mo_ta}"
+        }
+
+        # 0. Exact Historical Match Check
+        clean_desc = clean_text_basic(raw_mo_ta)
+        cache_key = (hs_code, clean_desc)
+        if cache_key in self.exact_match_cache:
+            base_res.update(self.exact_match_cache[cache_key])
+            base_res['Trạng Thái'] = 'Tự động duyệt (Lịch sử)'
+            base_res['_needs_model'] = False
+            return base_res
+
+        # 1. Dictionary Match
+        dict_res = self.predict_dictionary(clean_mo_ta, hs_code)
+        if dict_res:
+            base_res.update({
+                'Dòng SP': dict_res['dong_sp'],
+                'Loại': dict_res['loai'],
+                'Lớp 1': dict_res['lop1'],
+                'Lớp 2': dict_res['lop2'],
+                'Trạng Thái': 'Tự động duyệt (Từ điển)'
+            })
+            return base_res
+            
+        # 2. Needs Model Match
+        base_res['_needs_model'] = True
+        return base_res
 
     async def process_async(self, df, progress_callback=None, dict_paths=None, transaction_type=None):
-        if progress_callback: await progress_callback("Mapping Data...")
+        if progress_callback: await progress_callback("Starting Fast CPU Inference Pipeline...")
         
-        def initial_mapping():
-            df_clean = pd.DataFrame()
-            hs_col = None
-            for cand in ['HS_Code', 'Mã HS', 'HS Code', 'Mã hàng', 'HS']:
-                if cand in df.columns:
-                    hs_col = cand
-                    break
-            if hs_col:
-                df_clean['Mã HS'] = df[hs_col]
-            else:
-                df_clean['Mã HS'] = ''
-
-            if 'Product' in df.columns:
-                df_clean['Dòng SP'] = df['Product']
-            else:
-                df_clean['Dòng SP'] = ''
-
-            is_nk = 'VN_Importer' in df.columns
-            is_xk = 'VN_Exporter' in df.columns
-
-            if is_xk:
-                df_clean['Công ty XK'] = df['VN_Exporter'].fillna(df.get('VN_Exporter_EN', ''))
-                df_clean['Công ty NK'] = df.get('Foreign_Importer', '')
-                df_clean['Quốc gia'] = df.get('Destination_Country', '').fillna(df.get('Destination_Country_CN', ''))
-                detected_type = 'Xuất khẩu'
-            elif is_nk:
-                df_clean['Công ty NK'] = df['VN_Importer'].fillna(df.get('VN_Importer_EN', ''))
-                df_clean['Công ty XK'] = df.get('Foreign_Exporter', '')
-                df_clean['Quốc gia'] = df.get('Origin_Country', '').fillna(df.get('Origin_Country_CN', ''))
-                detected_type = 'Nhập khẩu'
-            else:
-                df_clean['Công ty XK'] = ''
-                df_clean['Công ty NK'] = ''
-                df_clean['Quốc gia'] = ''
-                detected_type = ''
-                
-            # Use provided transaction_type or fallback to auto-detected
-            final_type = transaction_type if transaction_type else detected_type
-            df_clean['Loại giao dịch'] = final_type
-
-            df_clean['Châu lục'] = df.get('Continent', '')
-            df_clean['Incoterms'] = df.get('Incoterms', '')
-            df_clean['Method_of_Payment'] = df.get('Method_of_Payment', '')
-            df_clean['DVT'] = df.get('Unit_Qty', '')
-            df_clean['Lượng'] = pd.to_numeric(
-                df.get('Quantity', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
-                errors='coerce'
-            )
-            df_clean['Giá trị'] = pd.to_numeric(
-                df.get('Total_Value_USD', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
-                errors='coerce'
-            )
-            df_clean['Đơn giá'] = pd.to_numeric(
-                df.get('Unit_Price_USD', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
-                errors='coerce'
-            )
-
-            if 'Date' in df.columns:
-                date_series = pd.to_datetime(df['Date'], errors='coerce')
-                # Keep full date as ISO YYYY-MM-DD for BI tools
-                df_clean['Ngày'] = date_series.dt.strftime('%Y-%m-%d')
-                df_clean['Ngày'] = df_clean['Ngày'].fillna('')
-                # Add separate integer month column for pivot analysis
-                extracted_month = date_series.dt.month
-                month_col = df.get('Month', pd.Series(dtype=str)).astype(str).str[-2:]
-                month_col = pd.to_numeric(month_col, errors='coerce')
-                df_clean['Tháng'] = extracted_month.fillna(month_col).astype('Int64')
-            else:
-                df_clean['Ngày'] = ''
-                df_clean['Tháng'] = pd.array([pd.NA] * len(df), dtype='Int64')
-
-            prod_col = None
-            for cand in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Description', 'Mô tả', 'Tên hàng', 'Product']:
-                if cand in df.columns:
-                    prod_col = cand
-                    break
+        def process_all():
+            results = []
+            needs_model_indices = []
+            features = []
             
-            detailed_product = df[prod_col].copy() if prod_col else pd.Series(dtype=str)
-            for fallback_col in ['Detailed_Product', 'Actual_Detailed_Product_LL', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Tên hàng gốc', 'Detailed_Product_EN', 'Detailed_Product_CN']:
-                if fallback_col in df.columns and fallback_col != prod_col:
-                    detailed_product = detailed_product.fillna(df[fallback_col])
+            for i, row in df.iterrows():
+                res = self._process_row_pass1(row)
+                results.append(res)
+                if res['_needs_model']:
+                    needs_model_indices.append(len(results) - 1)
+                    features.append(res['_feature'])
+            
+            # Pass 2: Batch inference
+            if features and self.model:
+                try:
+                    probs = self.model.predict_proba(features)
+                    max_indices = np.argmax(probs, axis=1)
+                    confidences = probs[np.arange(len(probs)), max_indices]
+                    classes = self.model.classes_[max_indices]
                     
-            df_clean['Tên hàng raw'] = detailed_product
-            return df_clean
-
-        df_clean = await asyncio.to_thread(initial_mapping)
-
-        if progress_callback: await progress_callback("Processing Data (Pass 1 - Parallel)...")
+                    for idx, conf, label in zip(needs_model_indices, confidences, classes):
+                        if conf >= self.THRESHOLD:
+                            parts = [p.strip() for p in label.split(' | ')]
+                            results[idx].update({
+                                'Dòng SP': parts[0] if len(parts) > 0 else '',
+                                'Loại': parts[1] if len(parts) > 1 else '',
+                                'Lớp 1': parts[2] if len(parts) > 2 else '',
+                                'Lớp 2': parts[3] if len(parts) > 3 else '',
+                                'Trạng Thái': f'Tự động duyệt (AI {conf*100:.1f}%)'
+                            })
+                        else:
+                            results[idx]['Trạng Thái'] = 'Cần Nghiệp Vụ'
+                except Exception as e:
+                    for idx in needs_model_indices:
+                        results[idx]['Trạng Thái'] = 'Cần Nghiệp Vụ'
+            else:
+                for idx in needs_model_indices:
+                    results[idx]['Trạng Thái'] = 'Cần Nghiệp Vụ'
+                    
+            for res in results:
+                res.pop('_needs_model', None)
+                res.pop('_feature', None)
+                
+            return pd.DataFrame(results)
+            
+        res_df = await asyncio.to_thread(process_all)
         
-        if df_clean.empty:
-            df_clean['Hãng'] = ''
-            df_clean['Công suất'] = ''
-            df_clean['Tên hàng'] = ''
-            df_clean['input_for_ai'] = ''
-            df_clean['Ket_Qua_Gop'] = ''
-            df_clean['Độ Tự Tin (%)'] = 0.0
-            df_clean['Trạng Thái'] = ''
-        else:
-            import multiprocessing
-            from backend.core.worker import process_chunk
-            
-            total_rows = len(df_clean)
-            num_cores = multiprocessing.cpu_count()
-            chunk_size = max(5000, total_rows // (num_cores * 2))
-            if chunk_size == 0: chunk_size = 5000
-            
-            loop = asyncio.get_running_loop()
-            
-            tasks = []
-            for i in range(0, total_rows, chunk_size):
-                chunk = df_clean[['Tên hàng raw']].iloc[i:i+chunk_size]
-                chunk_data = (chunk, dict_paths)
-                tasks.append(loop.run_in_executor(self.executor, process_chunk, chunk_data))
-            
-            if progress_callback: 
-                await progress_callback(f"Processing Data... (processing {total_rows} rows concurrently)")
-            
-            results_list = await asyncio.gather(*tasks)
-
-            processed_df = pd.concat(results_list)
-            for col in processed_df.columns:
-                df_clean[col] = processed_df[col]
-
-        if progress_callback: await progress_callback("AI Inference (Pass 2)...")
-        
-        if not df_clean.empty:
-            # Find rows that need AI fallback
-            fallback_mask = df_clean['Ket_Qua_Gop'].isnull()
-            fallback_indices = df_clean[fallback_mask].index.tolist()
-            fallback_texts = df_clean.loc[fallback_mask, 'input_for_ai'].tolist()
-            
-            if fallback_texts:
-                total_ai_rows = len(fallback_texts)
-                # Optimized batch size for CPU sequential inference
-                ai_batch_size = 64
-
-                print(f"DEBUG: AI Inference on {total_ai_rows} rows.")
-                
-                ai_predictions = []
-                for i in range(0, total_ai_rows, ai_batch_size):
-                    batch_texts = fallback_texts[i:i+ai_batch_size]
-                    
-                    if progress_callback and (i % (ai_batch_size * 20) == 0 or i == 0):
-                        await progress_callback(f"AI Inference... ({i}/{total_ai_rows} rows)")
-                    
-                    # Run batch inference in a thread to keep event loop responsive
-                    batch_results = await asyncio.to_thread(self.predict_ai_batch, batch_texts, batch_size=ai_batch_size)
-                    ai_predictions.extend(batch_results)
-                
-                # Merge AI predictions back into the main DataFrame
-                for idx, (label, prob, status) in zip(fallback_indices, ai_predictions):
-                    df_clean.at[idx, 'Ket_Qua_Gop'] = label
-                    df_clean.at[idx, 'Độ Tự Tin (%)'] = prob
-                    df_clean.at[idx, 'Trạng Thái'] = status
-
-        def split_and_assign():
-            temp_cols = df_clean['Ket_Qua_Gop'].str.split(r' \| ', expand=True)
-            for i in range(5):
-                if i not in temp_cols.columns:
-                    temp_cols[i] = 'không_có'
-                    
-            df_clean['Dòng SP'] = temp_cols[0]
-            df_clean['Loại'] = temp_cols[1]
-            df_clean['Lớp 1'] = temp_cols[2]
-            df_clean['Lớp 2'] = temp_cols[3]
-            
-            mask = (temp_cols[4] != 'không_có') & temp_cols[4].notna() & (temp_cols[4] != '')
-            df_clean['Mã HS'] = np.where(mask, temp_cols[4], df_clean['Mã HS'])
-
-            df_clean['MDSD'] = np.nan
-            df_clean['Năm'] = np.nan
-            
-        await asyncio.to_thread(split_and_assign)
-
         if progress_callback: await progress_callback("Finalizing...")
         
         def finalize():
-            df_final = df_clean.drop(columns=['input_for_ai', 'Ket_Qua_Gop', 'Tên hàng raw'], errors='ignore')
-            mapped_cols_set = set(['HS_Code', 'Product', 'VN_Exporter', 'VN_Exporter_EN', 'Foreign_Importer', 'Destination_Country', 'Destination_Country_CN', 'Continent', 'Incoterms', 'Method_of_Payment', 'Unit_Qty', 'Quantity', 'Total_Value_USD', 'Unit_Price_USD', 'Date', 'Month', 'Detailed_Product', 'Detailed_Product_EN', 'Detailed_Product_CN', 'VN_Importer', 'VN_Importer_EN', 'Foreign_Exporter', 'Origin_Country', 'Origin_Country_CN', 'Actual_Detail_Product', 'Actual_Detailed_Product', 'Actual_Detailed_Product_LL'])
-            for col in df.columns:
-                if col not in mapped_cols_set and col not in df_final.columns:
-                    df_final[col] = df[col]
+            # Merge with original df
+            df_final = df.copy()
+            for col in ['Tên hàng', 'Hãng', 'Công suất', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Trạng Thái', 'Mã HS']:
+                if col in res_df.columns:
+                    df_final[col] = res_df[col]
             
-            # BI-Ready: Rename English column headers to Vietnamese
-            rename_map = {
-                'Method_of_Payment': 'Phương thức thanh toán',
-            }
-            df_final = df_final.rename(columns=rename_map)
+            # Map transaction types and basic info like the old script did
+            is_nk = 'VN_Importer' in df_final.columns
+            is_xk = 'VN_Exporter' in df_final.columns
+
+            if is_xk:
+                df_final['Công ty XK'] = df_final['VN_Exporter'].fillna(df_final.get('VN_Exporter_EN', ''))
+                df_final['Công ty NK'] = df_final.get('Foreign_Importer', '')
+                df_final['Quốc gia'] = df_final.get('Destination_Country', '').fillna(df_final.get('Destination_Country_CN', ''))
+                detected_type = 'Xuất khẩu'
+            elif is_nk:
+                df_final['Công ty NK'] = df_final['VN_Importer'].fillna(df_final.get('VN_Importer_EN', ''))
+                df_final['Công ty XK'] = df_final.get('Foreign_Exporter', '')
+                df_final['Quốc gia'] = df_final.get('Origin_Country', '').fillna(df_final.get('Origin_Country_CN', ''))
+                detected_type = 'Nhập khẩu'
+            else:
+                df_final['Công ty XK'] = ''
+                df_final['Công ty NK'] = ''
+                df_final['Quốc gia'] = ''
+                detected_type = ''
+                
+            final_type = transaction_type if transaction_type else detected_type
+            df_final['Loại giao dịch'] = final_type
             
-            # BI-Ready: Drop pandas duplicate suffix columns (e.g. "Công suất.1")
-            suffix_cols = [c for c in df_final.columns if c.endswith('.1')]
-            if suffix_cols:
-                df_final = df_final.drop(columns=suffix_cols, errors='ignore')
+            df_final['Châu lục'] = df_final.get('Continent', '')
+            df_final['Incoterms'] = df_final.get('Incoterms', '')
+            df_final['Phương thức thanh toán'] = df_final.get('Method_of_Payment', '')
+            df_final['DVT'] = df_final.get('Unit_Qty', '')
+            df_final['Lượng'] = pd.to_numeric(
+                df_final.get('Quantity', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
+                errors='coerce'
+            )
+            df_final['Giá trị'] = pd.to_numeric(
+                df_final.get('Total_Value_USD', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
+                errors='coerce'
+            )
+            df_final['Đơn giá'] = pd.to_numeric(
+                df_final.get('Unit_Price_USD', pd.Series(dtype=str)).astype(str).str.replace(r'[,$\s]', '', regex=True).str.replace(r'[a-zA-Z]+', '', regex=True),
+                errors='coerce'
+            )
+
+            if 'Date' in df_final.columns:
+                date_series = pd.to_datetime(df_final['Date'], errors='coerce')
+                df_final['Ngày'] = date_series.dt.strftime('%Y-%m-%d')
+                df_final['Ngày'] = df_final['Ngày'].fillna('')
+                extracted_month = date_series.dt.month
+                month_col = df_final.get('Month', pd.Series(dtype=str)).astype(str).str[-2:]
+                month_col = pd.to_numeric(month_col, errors='coerce')
+                df_final['Tháng'] = extracted_month.fillna(month_col).astype('Int64')
+            else:
+                df_final['Ngày'] = ''
+                df_final['Tháng'] = pd.array([pd.NA] * len(df_final), dtype='Int64')
             
-            return df_final
+            df_final['MDSD'] = np.nan
+            df_final['Năm'] = np.nan
+            df_final['Công suất.1'] = np.nan
+            df_final['Loại 1'] = np.nan
+            df_final['Loại 2'] = np.nan
+
+            HQ_COLUMNS = [
+                'Ngày', 'Mã HS', 'Công ty NK', 'Tên hàng', 'DVT', 'Lượng', 'Giá trị', 'Đơn giá',
+                'Hãng', 'Dòng SP', 'Loại', 'Lớp 1', 'Lớp 2', 'Công suất', 'Quốc gia', 'Châu lục',
+                'MDSD', 'Công ty XK', 'Incoterms', 'Method_of_Payment', 'Công suất.1', 'Loại 1', 'Loại 2', 'Năm',
+                'Trạng Thái'
+            ]
+            
+            for c in HQ_COLUMNS:
+                if c not in df_final.columns:
+                    df_final[c] = np.nan
+
+            return df_final[HQ_COLUMNS]
 
         df_final = await asyncio.to_thread(finalize)
         return df_final
