@@ -1,0 +1,320 @@
+======================================================================
+SPOT-CHECK: MAU KIEM TRA THU CONG
+Thoi gian: 2026-06-23 22:07:12
+======================================================================
+
+----------------------------------------------------------------------
+  DICT (AC) (10 samples)
+----------------------------------------------------------------------
+
+  Sample #1
+  HS_Code:       94051999
+  Product:       45886OZQ225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT)Bath 3Lt(45886OZ)Hàng mới 100%#&VN
+  Product_EN:    45886OZQ225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT)Bath 3Lt(45886OZ)new Goods 100%#&amp;VN
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #2
+  HS_Code:       94051199
+  Product:       813001753#&Đèn led Panel gắn trần chiếu sáng cho VP,NX:PL5C,24,30/40/50W,83A,,đ/áp:120-277V,h/suất phát quang:110Lm/W,dài: 1195+-0.6mm, rộng: 585+-0.5
+  Product_EN:    813001753#&amp;led Panel mount ceiling lighting for VP,NX:PL5C,24,30/40/50W,83A,,e/voltage:120-277V,
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led panel lớn
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #3
+  HS_Code:       94051999
+  Product:       94350303031#&ĐÈN LED TRANG TRÍ P350303-031 2-L 13IN FLUSHMOUNT (94350303031) Hàng mới 100%#&VN
+  Product_EN:    94350303031#&amp;DECORATION LED LIGHTS P350303-031 2-L 13IN FLUSHMOUNT (94350303031) new Goods 100%#
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #4
+  HS_Code:       94054210
+  Product:       Đèn pha LED cắm đất Model: 1003453367, kích thước: 84mm, (1 thùng = 2 bộ,1 bộ = 4 cái) ; bộ đèn hoàn chỉnh, mới 100%#&VN
+  Product_EN:    LED headlight plug land Model: 1003453367, size: 84mm, (1 barrel = 2 sets,1 set = 4 pcs) ; the lamp 
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         flood
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #5
+  HS_Code:       94051999
+  Product:       44032NIQ225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) Mini Pendant 1Lt (44032NI) Hàng mới 100%#&VN
+  Product_EN:    44032NIQ225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) Mini Pendant 1Lt (44032NI) new Goods 1
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #6
+  HS_Code:       94051999
+  Product:       8116OZQ225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) Flush Mount 3Lt (8116OZ) Hàng mới 100%#&VN
+  Product_EN:    8116OZQ225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) Flush Mount 3Lt (8116OZ) new Goods 100%
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #7
+  HS_Code:       94054190
+  Product:       P82512#&Đèn cảm biến tia hồng ngoại,UFPSF000.FC ( UP-FloodLight) (Nguồn cấp: 48VDC, 0.22A Max, Công suất: 10.5W)#&VN
+  Product_EN:    P82512#&amp;Lamp infrared ray sensor,UFPSF000.FC ( UP-FloodLight) (power supply: 48VDC, 0.22 A, Max 
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #8
+  HS_Code:       94054210
+  Product:       Đèn pha LED cắm đất Model: 1003453367, kích thước: 84mm, (1 thùng = 2 bộ,1 bộ = 4 cái) ; bộ đèn hoàn chỉnh, mới 100%#&VN
+  Product_EN:    LED headlight plug land Model: 1003453367, size: 84mm, (1 barrel = 2 sets,1 set = 4 pcs) ; the lamp 
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         flood
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+  Sample #9
+  HS_Code:       94051999
+  Product:       49625030Q225#&ĐÈN LED TRANG TRÍ (LED DECORATIVE LIGHT) Westlake Cast 1-Light Outdoor Wall Lantern (49625030) Hàng mới 100%#&VN
+  Product_EN:    49625030Q225#&amp;DECORATION LED LIGHTS (LED DECORATIVE LIGHT) Westlake Cast 1-Light Outdoor Wall La
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 9)
+
+  Sample #10
+  HS_Code:       94054990
+  Product:       SNC10325100061N#&Đèn LED flood light, Model: SFL-200-CS-U-TR, công suất: 200W, điện áp: AC120-277V, mới 100%#&VN
+  Product_EN:    SNC10325100061N#&amp;LED flood light, Model: SFL-200-CS-U-TR, wattage: 200W, voltage: AC120-277V, ne
+  Source:        dict
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         flood
+  Lop 2:         không_có
+  Confidence:    100.0
+  Status:        Tự động duyệt (Từ điển - Điểm: 25)
+
+----------------------------------------------------------------------
+  DICT (SEMANTIC) (10 samples)
+----------------------------------------------------------------------
+
+  Sample #1
+  HS_Code:       94051199
+  Product:       Bộ đèn LIGHTING FIXTURE - Model: MXL1088-LED35K9027N, hàng mới 100%#&VN
+  Product_EN:    The lamp LIGHTING FIXTURE - Model: MXL1088-LED35K9027N, new goods 100%#&amp;VN
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          LK
+  Lop 1:         led cảnh quan
+  Lop 2:         led solar
+  Confidence:    59.400001525878906
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.59)
+
+  Sample #2
+  HS_Code:       94059990
+  Product:       Máng đèn đơn 1x1.2m (không bóng), điện 1 đầu, Kích thước (DxRxC): 1200x45x20mm, bằng sắt, sơn tĩnh điện dùng để lắp bóng đèn mới 100%#&VN
+  Product_EN:    Lights single 1x1.2m (not the ball), power 1 head size (Lxwxh): 1200x45x20mm, with iron, powder coat
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          LK
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    76.20999908447266
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.76)
+
+  Sample #3
+  HS_Code:       94054990
+  Product:       Đèn led búp trụ DOS 20W - ánhsáng trắng, Quy cách: Công suất 20W, ánh sáng trắng 6500K, đui E27.Chất liệu: Nhựa tản nhiệt + nhôm bên trong. Hàng mới 1
+  Product_EN:    Led doll universe DOS 20W - ánhsáng white, specification: capacity 20W white light 6500K, lamp holde
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          LK
+  Lop 1:         không_có
+  Lop 2:         led solar
+  Confidence:    67.44000244140625
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.67)
+
+  Sample #4
+  HS_Code:       94059990
+  Product:       Vỏ ngoài thân đèn bằng nhôm, phi 125*41.2mm , 452237531, mới 100%#&VN
+  Product_EN:    The outer shell lamp body made of aluminum, non-125*41.2 mm , 452237531, new 100%#&amp;VN
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led trang trí
+  Lop 2:         bảng hiệu led
+  Confidence:    62.27000045776367
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.62)
+
+  Sample #5
+  HS_Code:       94054290
+  Product:       SP0407#&Đèn led chiếu sáng LBDL-1072-21W-4000K-120V-V999030013501(Twin, 2K Lmn Sel, 4K, Mtn, Resi, Sq,Wh TGS2S402MSRW,13596016)#&VN
+  Product_EN:    SP0407#&amp;led lighting LBDL-1072-21W-4000K-120V-V999030013501(Twin, 2K Lmn Sel, 4K, Mtn, Resi, Sq,
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led chống cháy/ ẩm
+  Lop 2:         không_có
+  Confidence:    56.15999984741211
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.56)
+
+  Sample #6
+  HS_Code:       94051199
+  Product:       6080106371UV-25#&Đèn chiếu sáng, LIGHTING FIXTURE,KT-UCLED14-34A-9CSF-FDIM,hàng mới 100%#&VN
+  Product_EN:    6080106371UV-25#&amp;Lights, LIGHTING FIXTURE,KT-UCLED14-34A-9CSF-FDIM,new goods 100%#&amp;VN
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led bán nguyệt
+  Lop 2:         không_có
+  Confidence:    63.43000030517578
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.63)
+
+  Sample #7
+  HS_Code:       94054190
+  Product:       40568002-055-RV08#&Đèn chiếu sáng công việc, thông số: 120V/60Hz, 6000LM, model: K40568, hàng mới 100%, PN: 40568002-055-RV08#&VN
+  Product_EN:    40568002-055-RV08#&amp;Lights work, specifications: 120V/60Hz, 6000LM, model: K40568, 100% brand new
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led chống cháy/ ẩm
+  Lop 2:         không_có
+  Confidence:    60.90999984741211
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.61)
+
+  Sample #8
+  HS_Code:       94051999
+  Product:       Đèn chùm treo tường chưa được gắn bóng đèn - Wall lamp W6.5"E7.5"H10.5" , model SNN8406W ,hàng do công ty sản xuất,hàng mới 100% #&VN
+  Product_EN:    Chandelier hanging wall has not yet been mounted ball lamp - Wall lamp W6.5"E7.5"H10.5" , model SNN8
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led ốp trần
+  Lop 2:         led solar
+  Confidence:    66.68000030517578
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.67)
+
+  Sample #9
+  HS_Code:       94054260
+  Product:       PSH075/15-L983#&Đèn Led chiếu sáng sân vườn (Công suất 20W, điện áp 12V, hàng mới 100%)#&VN
+  Product_EN:    PSH075/15-L983#&amp;Led garden lighting (power 20W, voltage 12V, 100% brand new)#&amp;VN
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led gắn tường
+  Lop 2:         không_có
+  Confidence:    65.8499984741211
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.66)
+
+  Sample #10
+  HS_Code:       94051999
+  Product:       Đèn treo tường 8752701-71 1L wall lamp (không bao gồm bóng đèn) Kích thước W26.67xH45.72xE31.43 cm dùng để trang trí và thắp sáng trong nhà, mới 100%#
+  Product_EN:    Lamp wall 8752701-71 1L wall lamp (not include bulb) size W26.67xH45.72xE31.43 cm used for decoratio
+  Source:        dict_semantic
+  Dong SP:       SP LED
+  Loai:          NC
+  Lop 1:         led gắn tường
+  Lop 2:         không_có
+  Confidence:    67.88999938964844
+  Status:        Tự động duyệt (Ngữ nghĩa - Độ tương đồng: 0.68)
+
+----------------------------------------------------------------------
+  CAN KIEM TRA (5 samples)
+----------------------------------------------------------------------
+
+  Sample #1
+  HS_Code:       94051199
+  Product:       Đèn LED Worklight LED LAMP - Model: MPL1025, hàng mới 100%#&VN
+  Product_EN:    LED Worklight LED LAMP - Model: MPL1025, new goods 100%#&amp;VN
+  Source:        none
+  Dong SP:       không_có
+  Loai:          không_có
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    0.0
+  Status:        Can kiem tra
+
+  Sample #2
+  HS_Code:       94051999
+  Product:       Đèn chiếu sáng, dùng để trang trí, Mã hàng: 1007172700, hiệu HAMPTON BAY, công suất 40W/120V, kích thước:16*16.2*19.8cm, hàng mới 100%#&VN
+  Product_EN:    Lights used for decoration, sku: 1007172700, brand HAMPTON BAY, 40W/120V size:16*16.2*19.8 cm, new g
+  Source:        none
+  Dong SP:       không_có
+  Loai:          không_có
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    0.0
+  Status:        Can kiem tra
+
+  Sample #3
+  HS_Code:       94054990
+  Product:       HV250614-C4.1#&Đèn LED thỏ 10 inch, màu xanh lá, mã hàng 415891, hàng mới 100%#&VN
+  Product_EN:    HV250614-C4.1#&amp;LED rabbit 10 inch, color green, item code 415891, new goods 100%#&amp;VN
+  Source:        none
+  Dong SP:       không_có
+  Loai:          không_có
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    0.0
+  Status:        Can kiem tra
+
+  Sample #4
+  HS_Code:       94054290
+  Product:       Đèn led bán nguyệt Rạng Đông 30cm, mới 100%#&VN
+  Product_EN:    Led semi-Daybreak 30cm, new 100%#&amp;VN
+  Source:        none
+  Dong SP:       không_có
+  Loai:          không_có
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    0.0
+  Status:        Can kiem tra
+
+  Sample #5
+  HS_Code:       94051199
+  Product:       Đèn LED CABINET LAMP - Model: MXW1012-L100K9027, hàng mới 100%#&VN
+  Product_EN:    LED CABINET LAMP - Model: MXW1012-L100K9027, new goods 100%#&amp;VN
+  Source:        none
+  Dong SP:       không_có
+  Loai:          không_có
+  Lop 1:         không_có
+  Lop 2:         không_có
+  Confidence:    0.0
+  Status:        Can kiem tra
+
+======================================================================
+HET SPOT-CHECK
+======================================================================
