@@ -39,6 +39,10 @@ ACTIVE_GEN_JOBS = {}
 TEMP_DRAFT_STORAGE_PATH = "backend/storage/temp_drafts"
 os.makedirs(TEMP_DRAFT_STORAGE_PATH, exist_ok=True)
 
+HQ_DATA_PATH = "backend/storage/hq_data"
+os.makedirs(HQ_DATA_PATH, exist_ok=True)
+
+
 from sqlalchemy import text
 try:
     with engine.begin() as conn:

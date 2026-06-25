@@ -7,9 +7,8 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(script_dir, "../../../Dữ liệu hải quan/Đã xử lý")
+HQ_DATA_DIR = os.path.join(script_dir, "../storage/hq_data")
 DB_PATH = os.path.join(script_dir, "../storage/ground_truth.db")
-HQ_FILES = ["HQ 2025.xlsx", "HQ 2026.xlsx"]
 
 def clean_text_basic(text):
     if pd.isna(text):
@@ -54,16 +53,24 @@ def process_file(file_path):
     return df
 
 def seed_database():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    print(f"Scanning HQ files in {HQ_DATA_DIR}")
+    
+    if not os.path.exists(HQ_DATA_DIR):
+        print(f"Directory {HQ_DATA_DIR} does not exist. Please upload HQ files first.")
+        return
+
+    hq_files = [f for f in os.listdir(HQ_DATA_DIR) if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$')]
+    
+    if not hq_files:
+        print(f"No Excel files found in {HQ_DATA_DIR}.")
+        return
+
     dfs = []
-    for file in HQ_FILES:
-        path = os.path.join(DATA_DIR, file)
-        if os.path.exists(path):
-            df = process_file(path)
-            if df is not None:
-                dfs.append(df)
-        else:
-            print(f"File not found: {path}")
+    for f in hq_files:
+        file_path = os.path.join(HQ_DATA_DIR, f)
+        df = process_file(file_path)
+        if df is not None:
+            dfs.append(df)
             
     if not dfs:
         print("No data to process.")

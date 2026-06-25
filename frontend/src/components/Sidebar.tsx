@@ -8,11 +8,6 @@ const mainMenuItems = [
   { icon: BrainCircuit, label: "Cập Nhật Tri Thức AI", path: "/knowledge-update" },
 ];
 
-const advancedMenuItems = [
-  { label: "Quản Lý Từ Điển", path: "/dictionary" },
-  { label: "Sinh Từ Điển", path: "/dictionary/generate" },
-  { label: "Cây Mã HS", path: "/taxonomy" },
-];
 
 export function Sidebar({ setToken }: { setToken: (token: string | null) => void }) {
   const location = useLocation();
@@ -58,33 +53,6 @@ export function Sidebar({ setToken }: { setToken: (token: string | null) => void
           );
         })}
 
-        <div className="pt-6 pb-2">
-          <button 
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="flex items-center gap-2 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider w-full px-3 hover:text-sidebar-foreground transition-colors"
-          >
-            <Settings className="w-4 h-4" />
-            Cài đặt nâng cao
-          </button>
-        </div>
-
-        {showAdvanced && advancedMenuItems.map((item) => {
-          const isActive = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`group flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 text-sm ${
-                isActive
-                  ? "bg-sidebar-accent/50 text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground hover:translate-x-1"
-              }`}
-            >
-              <span className="w-5 flex justify-center text-xs opacity-50">•</span>
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
       </nav>
       <div className="p-4 border-t border-sidebar-border">
         <button
