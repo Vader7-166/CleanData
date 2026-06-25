@@ -191,6 +191,52 @@ async def process_batch(batch_id: str, tasks: list):
         db_sync.commit()
     db_sync.close()
 
+
+@app.post("/api/upload-hq")
+async def upload_hq_files(
+    files: List[UploadFile] = File(...),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    saved_files = []
+    for file in files:
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            continue
+            
+        file_path = os.path.join(HQ_DATA_PATH, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        saved_files.append(file.filename)
+        
+    if not saved_files:
+        raise HTTPException(status_code=400, detail="Không có file Excel nào hợp lệ được tải lên.")
+        
+    return {"status": "success", "message": f"Đã tải lên {len(saved_files)} file nghiệp vụ thành công.", "files": saved_files}
+
+@app.get("/api/hq-files")
+async def get_hq_files(current_user: models.User = Depends(auth.get_current_user)):
+    if not os.path.exists(HQ_DATA_PATH):
+        return {"files": []}
+        
+    files = []
+    for f in os.listdir(HQ_DATA_PATH):
+        if f.endswith(('.xlsx', '.xls')) and not f.startswith('~$'):
+            stat = os.stat(os.path.join(HQ_DATA_PATH, f))
+            files.append({
+                "filename": f,
+                "size": stat.st_size,
+                "updated_at": stat.st_mtime
+            })
+    return {"files": files}
+
+@app.delete("/api/hq-files/{filename}")
+async def delete_hq_file(filename: str, current_user: models.User = Depends(auth.get_current_user)):
+    file_path = os.path.join(HQ_DATA_PATH, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File không tồn tại")
+        
+    os.remove(file_path)
+    return {"status": "success", "message": "Đã xóa file."}
+
 @app.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...), 
