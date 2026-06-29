@@ -30,39 +30,38 @@ def train_model():
         print("Database is empty.")
         return
 
-    print(f"Loaded {len(df)} rows.")
-
     df['label'] = df['Dòng SP'] + " | " + df['Loại'] + " | " + df['Lớp 1'] + " | " + df['Lớp 2']
-    df['features'] = "hs" + df['hs_code'] + " " + df['clean_text']
-
-    X = df['features']
-    y = df['label']
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
-
-    print("Initializing pipeline (Char-level TF-IDF + SGD Classifier)...")
-    pipeline = Pipeline([
-        ('tfidf', TfidfVectorizer(analyzer='char_wb', ngram_range=(3, 6), min_df=2, max_df=0.9)),
-        ('clf', SGDClassifier(loss='log_loss', n_jobs=-1, max_iter=50, random_state=42))
-    ])
-
-    print("Training model... (This should take 10-30 seconds)")
+    
+    ensemble_models = {}
+    
+    hs_groups = df.groupby('hs_code')
+    print(f"Training ensemble of {len(hs_groups)} models...")
     start_time = time.time()
-    pipeline.fit(X_train, y_train)
+    
+    for hs, sub_df in hs_groups:
+        X = sub_df['clean_text']
+        y = sub_df['label']
+        
+        if len(y.unique()) <= 1:
+            ensemble_models[str(hs)] = {'type': 'single', 'label': y.iloc[0]}
+            continue
+            
+        pipeline = Pipeline([
+            ('tfidf', TfidfVectorizer(analyzer='word', ngram_range=(1, 3), min_df=1)),
+            ('clf', SGDClassifier(loss='log_loss', n_jobs=-1, max_iter=50, random_state=42))
+        ])
+        
+        pipeline.fit(X, y)
+        ensemble_models[str(hs)] = {'type': 'model', 'model': pipeline}
+        
     end_time = time.time()
-    
-    print(f"Model trained in {end_time - start_time:.2f} seconds.")
+    print(f"Ensemble models trained in {end_time - start_time:.2f} seconds.")
 
-    print("Evaluating model...")
-    y_pred = pipeline.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    print(f"Accuracy on test set: {acc * 100:.2f}%")
-    
     os.makedirs(os.path.dirname(MODEL_OUTPUT_PATH), exist_ok=True)
     with open(MODEL_OUTPUT_PATH, 'wb') as f:
-        pickle.dump(pipeline, f)
+        pickle.dump(ensemble_models, f)
         
-    print(f"Model successfully saved to {MODEL_OUTPUT_PATH}")
+    print(f"Ensemble successfully saved to {MODEL_OUTPUT_PATH}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     train_model()
