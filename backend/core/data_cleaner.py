@@ -18,11 +18,10 @@ import asyncio
 
 class DataCleaner:
     def __init__(self, model_path):
-        # We ignore model_path from the old env var since we have our own fixed paths
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.model_path = os.path.join(script_dir, "../storage/classifier_model.pkl")
         self.dict_path = os.path.join(script_dir, "../storage/dict_golden.csv")
-        self.model = None
+        self.ensemble_models = None
         self.exact_match_cache = {}
         
         # Load Ground Truth Cache for exact matches
@@ -47,7 +46,6 @@ class DataCleaner:
         self.dictionary = {}
         self.THRESHOLD = 0.85
         self.STOPWORDS = {"có", "bằng", "đèn", "hàng", "mới", "100", "hiệu", "dùng", "để", "sáng", "chiếu", "của", "và", "nhựa", "bộ", "c", "với", "các", "loại", "cho", "1", "2", "3", "0", "led", "sản", "xuất", "bảng", "chiếc", "cái", "unk", "gp", "pce", "w", "v", "kg", "pcs", "set", "thùng", "hộp", "bao", "gói", "bóng", "quang", "điện", "hoạt", "động", "ống", "nước", "thông", "minh", "kích", "thước", "màu", "sắc", "chất", "liệu", "sử", "dụng", "dẫn"}
-        
         
         self.load_resources()
 
@@ -81,19 +79,18 @@ class DataCleaner:
         else:
             print("WARNING: Dictionary not found!")
 
-        print(f"Loading Classifier Model from {self.model_path}...")
+        print(f"Loading Ensemble Classifier Models from {self.model_path}...")
         if os.path.exists(self.model_path):
             try:
                 with open(self.model_path, 'rb') as f:
-                    self.model = pickle.load(f)
+                    self.ensemble_models = pickle.load(f)
             except Exception as e:
                 print(f"Error loading model: {e}")
         else:
-            print("WARNING: Classifier Model not found!")
+            print("WARNING: Ensemble Classifier Model not found!")
 
     def clean_text_for_dict(self, text):
-        if pd.isna(text):
-            return ""
+        if pd.isna(text): return ""
         text = str(text).lower()
         if '#&' in text:
             parts = text.split('#&')
@@ -148,7 +145,7 @@ class DataCleaner:
         if best_match:
             return best_match
             
-        # 2. Fallback to Overlap Score (Legacy behavior)
+        # 2. Fallback to Overlap Score
         max_score = 0
         text_words = set(text_lower.split())
         text_sig = text_words - self.STOPWORDS
@@ -175,8 +172,8 @@ class DataCleaner:
                     max_score = score
                     best_match = entry
                     
-        # Lower threshold since exact match failed, but we still want to catch high overlaps
-        if max_score >= 3.0:
+        # Fuzzy threshold >= 0.5 for dictionary coverage
+        if max_score >= 0.5:
             return best_match
             
         return None
@@ -213,7 +210,7 @@ class DataCleaner:
             'Trạng Thái': '',
             'Mã HS': hs_code,
             '_needs_model': False,
-            '_feature': f"hs{hs_code} {clean_mo_ta}"
+            '_feature': clean_mo_ta
         }
 
         # 0. Exact Historical Match Check
@@ -246,46 +243,55 @@ class DataCleaner:
         
         def process_all():
             results = []
-            needs_model_indices = []
-            features = []
             
             for i, row in df.iterrows():
                 res = self._process_row_pass1(row)
-                results.append(res)
-                if res['_needs_model']:
-                    needs_model_indices.append(len(results) - 1)
-                    features.append(res['_feature'])
-            
-            # Pass 2: Batch inference
-            if features and self.model:
-                try:
-                    probs = self.model.predict_proba(features)
-                    max_indices = np.argmax(probs, axis=1)
-                    confidences = probs[np.arange(len(probs)), max_indices]
-                    classes = self.model.classes_[max_indices]
-                    
-                    for idx, conf, label in zip(needs_model_indices, confidences, classes):
-                        if conf >= self.THRESHOLD:
+                
+                # If needs model, do it immediately for ensemble
+                if res['_needs_model'] and self.ensemble_models:
+                    hs_code = res['Mã HS']
+                    feature = res['_feature']
+                    if hs_code in self.ensemble_models:
+                        model_info = self.ensemble_models[hs_code]
+                        if model_info['type'] == 'single':
+                            label = model_info['label']
                             parts = [p.strip() for p in label.split(' | ')]
-                            results[idx].update({
+                            res.update({
                                 'Dòng SP': parts[0] if len(parts) > 0 else '',
                                 'Loại': parts[1] if len(parts) > 1 else '',
                                 'Lớp 1': parts[2] if len(parts) > 2 else '',
                                 'Lớp 2': parts[3] if len(parts) > 3 else '',
-                                'Trạng Thái': f'Tự động duyệt (AI {conf*100:.1f}%)'
+                                'Trạng Thái': f'Tự động duyệt (AI Fallback)'
                             })
                         else:
-                            results[idx]['Trạng Thái'] = 'Cần Nghiệp Vụ'
-                except Exception as e:
-                    for idx in needs_model_indices:
-                        results[idx]['Trạng Thái'] = 'Cần Nghiệp Vụ'
-            else:
-                for idx in needs_model_indices:
-                    results[idx]['Trạng Thái'] = 'Cần Nghiệp Vụ'
+                            try:
+                                model = model_info['model']
+                                probs = model.predict_proba([feature])
+                                max_idx = np.argmax(probs[0])
+                                conf = probs[0][max_idx]
+                                label = model.classes_[max_idx]
+                                
+                                if conf >= self.THRESHOLD:
+                                    parts = [p.strip() for p in label.split(' | ')]
+                                    res.update({
+                                        'Dòng SP': parts[0] if len(parts) > 0 else '',
+                                        'Loại': parts[1] if len(parts) > 1 else '',
+                                        'Lớp 1': parts[2] if len(parts) > 2 else '',
+                                        'Lớp 2': parts[3] if len(parts) > 3 else '',
+                                        'Trạng Thái': f'Tự động duyệt (AI {conf*100:.1f}%)'
+                                    })
+                                else:
+                                    res['Trạng Thái'] = 'Cần Nghiệp Vụ'
+                            except Exception as e:
+                                res['Trạng Thái'] = 'Cần Nghiệp Vụ'
+                    else:
+                        res['Trạng Thái'] = 'Cần Nghiệp Vụ'
+                elif res['_needs_model']:
+                    res['Trạng Thái'] = 'Cần Nghiệp Vụ'
                     
-            for res in results:
                 res.pop('_needs_model', None)
                 res.pop('_feature', None)
+                results.append(res)
                 
             return pd.DataFrame(results)
             
