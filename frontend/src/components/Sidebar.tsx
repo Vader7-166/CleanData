@@ -21,7 +21,7 @@ export function Sidebar({ setToken }: { setToken: (token: string | null) => void
   };
 
   return (
-    <div className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
+    <div className="w-64 h-full flex flex-col bg-sidebar border-r border-sidebar-border shadow-2xl">
       <div className="p-6 flex items-center gap-3 group cursor-pointer transition-transform hover:scale-[1.02]">
         <svg width="36" height="36" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 transition-transform duration-300 group-hover:translate-x-1">
           <path d="M10 20 L40 50 L10 80 L25 80 L55 50 L25 20 Z" fill="#00A651" />
