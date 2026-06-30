@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { UploadCloud, Download, RefreshCw, CheckCircle, AlertCircle, Sparkles, FileSpreadsheet, Loader2 } from 'lucide-react';
 import usePersistedState from '../hooks/usePersistedState';
 import { Button } from '../components/ui/button';
@@ -194,12 +195,19 @@ const CleanData = () => {
       </div>
 
       {/* Step 1 & 2: Upload */}
+      <AnimatePresence mode="wait">
       {currentStep < 3 && (
-        <Card className="border-2 shadow-sm">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.4 }}
+        >
+        <Card className="border-0 shadow-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl">
           <CardContent className="p-8">
             <div 
-              className={`border-2 border-dashed rounded-xl p-16 text-center transition-all ${
-                files.length > 0 ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/50"
+              className={`border-2 border-dashed rounded-2xl p-16 text-center transition-all duration-300 relative overflow-hidden ${
+                files.length > 0 ? "border-primary bg-primary/5 shadow-[0_0_40px_rgba(0,166,81,0.1)]" : "border-slate-300 dark:border-slate-700 hover:border-primary/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/50"
               }`}
             >
               <div className="flex flex-col items-center gap-6">
@@ -244,12 +252,23 @@ const CleanData = () => {
             )}
           </CardContent>
         </Card>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Step 3: Processing */}
+      <AnimatePresence mode="wait">
       {currentStep === 3 && batchStatus && (
-        <Card className="border-2 border-primary/20 shadow-md">
-          <CardContent className="p-12 text-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.5 }}
+        >
+        <Card className="border-0 shadow-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl relative overflow-hidden">
+          {/* Animated background glow */}
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/10 to-blue-500/10 opacity-50 animate-pulse"></div>
+          <CardContent className="p-12 text-center relative z-10">
             <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-8 relative">
               <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
               <Sparkles className="w-10 h-10 text-primary animate-pulse" />
@@ -282,13 +301,22 @@ const CleanData = () => {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Step 4: Done */}
+      <AnimatePresence mode="wait">
       {currentStep === 4 && batchStatus && (
-        <div className="space-y-6">
-          <Card className="border-2 border-emerald-500/20 bg-emerald-500/5 shadow-md">
-            <CardContent className="p-10 text-center">
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, type: "spring", bounce: 0.4 }}
+          className="space-y-6"
+        >
+          <Card className="border-0 bg-emerald-500/10 dark:bg-emerald-500/5 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/20 rounded-full blur-3xl"></div>
+            <CardContent className="p-10 text-center relative z-10">
               <div className="w-20 h-20 rounded-full bg-emerald-500 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/20">
                 <CheckCircle className="w-10 h-10 text-white" />
               </div>
@@ -340,8 +368,9 @@ const CleanData = () => {
               </ul>
             </CardContent>
           </Card>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

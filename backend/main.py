@@ -602,8 +602,17 @@ def download_batch_merged(batch_id: str, current_user: models.User = Depends(get
     merged_df = pd.concat(all_dfs, ignore_index=True)
     
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        merged_df.to_excel(writer, index=False)
+    
+    # Split the dataset into 3 parts based on 'Trạng Thái'
+    df_chuan = merged_df[merged_df['Trạng Thái'].astype(str).str.startswith('Tự động duyệt')]
+    df_nghiepvu = merged_df[merged_df['Trạng Thái'] == 'Cần Nghiệp Vụ']
+    
+    # Use xlsxwriter which is incredibly fast for large datasets
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_chuan.to_excel(writer, sheet_name='Dữ liệu chuẩn', index=False)
+        df_nghiepvu.to_excel(writer, sheet_name='Cần nghiệp vụ', index=False)
+        merged_df.to_excel(writer, sheet_name='Tất cả', index=False)
+        
     output.seek(0)
     
     return StreamingResponse(
@@ -1515,16 +1524,25 @@ async def trigger_learning(current_user: models.User = Depends(auth.get_current_
     """API endpoint to trigger the knowledge update script."""
     try:
         script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "learn_new_hq.py")
+        
+        # Ensure PYTHONUTF8=1 is passed so the subprocess outputs UTF-8
+        env = os.environ.copy()
+        env["PYTHONUTF8"] = "1"
+        
         process = await asyncio.create_subprocess_exec(
             sys.executable, script_path,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            env=env
         )
         stdout, stderr = await process.communicate()
         
         if process.returncode != 0:
-            return {"status": "error", "message": f"Learning failed: {stderr.decode()}"}
+            err_msg = stderr.decode(errors='replace') if stderr else "Unknown error"
+            print(f"Learning script failed: {err_msg}", flush=True)
+            return {"status": "error", "message": f"Learning failed: {err_msg}"}
             
         return {"status": "success", "message": "Tri thức mới đã được hệ thống học thành công!"}
     except Exception as e:
+        print(f"API LEARN ERROR: {repr(e)}", flush=True)
         raise HTTPException(status_code=500, detail=str(e))
